@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rebrandx import engine
 from rebrandx.engine import Options, Rules, windows_unsafe, safe_rename
 
+# Windows consoles default to cp1252, which cannot encode the tick marks.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 PASS, FAIL = [], []
 
 

@@ -30,8 +30,14 @@ powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
 Produces `dist\RebrandX.exe` — one self-contained file, no Python needed on
 the machine you copy it to.
 
-**This must be run on Windows.** PyInstaller cannot cross-compile, so a
-Windows executable cannot be produced from the Linux side of this repo.
+PyInstaller does not cross-compile, so this script itself must run on
+Windows. That is not the only way to get an `.exe` from a Linux box, though:
+
+- **CI** — every push builds `RebrandX.exe` on a `windows-latest` runner.
+  Fetch it with `gh run download` or from the run's artifacts page. This is
+  the most faithful build, since it is a real Windows machine.
+- **Wine** — install Windows Python into a Wine prefix and run PyInstaller
+  under it. See `packaging/build-windows-wine.sh`.
 
 ## Windows-specific behaviour
 

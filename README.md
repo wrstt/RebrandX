@@ -52,8 +52,10 @@ Or double-click `bin\rebrandx.bat`. To build a standalone `RebrandX.exe`:
 powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
 ```
 
-That must run *on* Windows — PyInstaller cannot cross-compile. The repo's CI
-also builds it on every push; grab it from the run's artifacts.
+PyInstaller does not cross-compile, so that script runs on Windows. From
+Linux, either let CI build it (every push produces `RebrandX.exe` on a real
+Windows runner — `gh run download`) or build under Wine with
+`packaging/build-windows-wine.sh`.
 
 See [packaging/README-windows.md](packaging/README-windows.md) for the
 Windows-specific details (case-only renames on NTFS, illegal file names,
