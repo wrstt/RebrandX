@@ -2,265 +2,470 @@
   <img src="share/banner.svg" alt="RebrandX" width="100%">
 </p>
 
-# RebrandX
+<h1 align="center">RebrandX</h1>
 
-Rebrand a folder. Point it at a project, give it an old name and a new one, and
-it replaces that name across **file contents, file names and folder names** —
-showing you every change as a diff before anything is written.
+<p align="center">
+  <b>Rename an entire project without hunting through it by hand.</b><br>
+  Files · folders · source contents · repo references
+</p>
 
-Runs on **Ubuntu** and **Windows**, as a desktop app and as an `rbx` command.
-One engine, one interface — only the window differs (GTK + WebKitGTK on Linux,
-WebView2 on Windows).
+<p align="center">
+  Ubuntu &nbsp;•&nbsp; Windows &nbsp;•&nbsp; Desktop + CLI
+</p>
+
+---
+
+## What is RebrandX?
+
+RebrandX takes an existing project name and replaces it across the entire project:
+
+* **File contents**
+* **File names**
+* **Folder names**
+* **Case variants**
+* **Repository references**
+
+Before anything is changed, RebrandX shows you exactly what it found and lets you review the result.
+
+Skip entire files, individual lines, or run the whole operation as a dry run.
+
+> **Nothing is written until you approve it.**
+
+---
+
+## Why?
+
+Renaming a project sounds simple until the old name exists in:
+
+```text
+Taskly/
+├── src/taskly/
+├── taskly.config.json
+├── README.md
+├── package.json
+├── .github/
+└── hundreds of source files
+```
+
+RebrandX handles the rename as one operation.
+
+```text
+Taskly  →  Flowdesk
+taskly  →  flowdesk
+TASKLY  →  FLOWDESK
+```
+
+Including paths and contents.
+
+---
+
+## Features
+
+### 🔎 Preview everything
+
+Scan the project before touching it.
+
+RebrandX shows:
+
+* every affected file
+* every path rename
+* change counts
+* line-by-line diffs
+
+Individual files and changed lines can be excluded before applying.
+
+### 🔤 Case-aware replacement
+
+One rule can automatically handle common variants:
+
+```text
+taskly  → flowdesk
+Taskly  → Flowdesk
+TASKLY  → FLOWDESK
+```
+
+Or switch to exact matching, case-insensitive replacement, or regex.
+
+### 📁 Rename paths too
+
+RebrandX doesn't stop at file contents.
+
+```text
+taskly.config.json
+↓
+flowdesk.config.json
+```
+
+Folders are renamed as well.
+
+### 🧹 Clean old project metadata
+
+Optionally remove project-specific files from the original repository:
+
+```text
+.github/
+.gitlab/
+LICENSE
+CHANGELOG
+CONTRIBUTING
+CODE_OF_CONDUCT
+SECURITY
+AUTHORS
+FUNDING.yml
+```
+
+The list is customizable.
+
+Your source, README and package metadata remain available for normal rebranding.
+
+### ↩ Safe in-place mode
+
+Modify the existing project while keeping a backup in:
+
+```text
+.rebrandx-backup/
+```
+
+Use **Revert** to restore the previous state.
+
+### 📋 Copy mode
+
+Prefer not to touch the original?
+
+Create a completely rebranded copy in another directory.
+
+Ignored paths such as `.git/` and `node_modules/` can be excluded automatically.
+
+### 🖥 Desktop + CLI
+
+The same engine powers:
+
+* Linux desktop app
+* Windows desktop app
+* `rbx` command-line interface
+
+---
+
+# Desktop App
+
+The interface uses a simple three-column workflow:
+
+| Rules               | Files                 | Diff                   |
+| ------------------- | --------------------- | ---------------------- |
+| Define what changes | Review affected files | Inspect actual changes |
+
+### Rules
+
+Configure:
+
+* find + replace
+* case variants
+* file/folder renaming
+* content replacement
+* regex
+* repository cleanup
+* ignore rules
+* dry-run mode
+
+### Files
+
+See every affected file and its resulting name.
+
+Skip anything that should remain untouched.
+
+### Diff
+
+Inspect the exact before/after result.
+
+Individual changed lines can be excluded before applying the rebrand.
 
 ---
 
 ## Install
 
-### Option A — the .deb (system-wide, the normal Ubuntu way)
+### Ubuntu
+
+#### `.deb` package
 
 ```bash
-cd ~/.local/share/rebrandx && ./packaging/build-deb.sh
+cd ~/.local/share/rebrandx
+./packaging/build-deb.sh
+
 sudo apt install ~/.local/share/rebrandx/dist/rebrandx_1.0.0_all.deb
 ```
 
-Puts `rebrandx` and `rbx` on everyone's PATH and registers the app with GNOME.
-Remove it later with `sudo apt remove rebrandx`.
+This installs both:
 
-### Option B — just for you, no sudo
+```text
+rebrandx
+rbx
+```
+
+and registers RebrandX with GNOME.
+
+#### Local install
+
+No sudo:
 
 ```bash
-cd ~/.local/share/rebrandx && ./install.sh          # add --no-desktop-icon to skip the Desktop shortcut
+./install.sh
 ```
 
-Installs into `~/.local` only. Undo it with `./uninstall.sh`.
+Optional:
 
-Either way you then get:
-
-- **Press Super, type "RebrandX"** — or pin it to the dock
-- **A double-clickable icon on the Desktop** (Option B)
-- **Right-click any folder in Files → Scripts → Rebrand with RebrandX**
-- `rbx` in the terminal
-
-### Windows
-
-WebView2 ships with Windows 10 and 11, so there is no runtime to install.
-
-```
-pip install pywebview
-python rebrandx\app_win.py
+```bash
+./install.sh --no-desktop-icon
 ```
 
-Or double-click `bin\rebrandx.bat`. To build a standalone `RebrandX.exe`:
+Remove later with:
 
+```bash
+./uninstall.sh
 ```
-powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
-```
 
-PyInstaller does not cross-compile, so that script runs on Windows. From
-Linux, either let CI build it (every push produces `RebrandX.exe` on a real
-Windows runner — `gh run download`) or build under Wine with
-`packaging/build-windows-wine.sh`.
-
-See [packaging/README-windows.md](packaging/README-windows.md) for the
-Windows-specific details (case-only renames on NTFS, illegal file names,
-long paths).
-
-### Requirements
-
-Ubuntu with GNOME, and:
+### Linux requirements
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
 ```
 
-These are already present on a stock Ubuntu desktop. There is nothing to
-compile and no `pip install` — RebrandX is pure Python on the system GTK stack.
+RebrandX uses the system GTK stack and does not require a Python package environment for the Linux desktop build.
 
 ---
 
-## The app
+## Windows
 
-<!-- Screenshots go in docs/. Drop a PNG there and reference it here. -->
+Windows 10 and 11 include WebView2.
 
-One window, three columns.
+Install the UI dependency:
 
-**Rules** (left) — the find and replace names, plus the switches:
+```powershell
+pip install pywebview
+```
 
-| Option | What it does |
-| --- | --- |
-| Match case variants | `taskly` · `Taskly` · `TASKLY` all get mapped, each to the matching casing of the new name |
-| Rename files & folders | Applies the rules to paths, not just contents |
-| Remove old repo lines | Deletes whole lines pointing at the old GitHub/GitLab/Bitbucket remote |
-| Remove old project files | Deletes the old project's *own* files — see below |
-| Case sensitive | *Advanced.* Off = match any casing, replace with exactly what you typed |
-| Regex find | *Advanced.* `FIND` becomes a pattern; use `$1` for groups in the replacement |
-| Replace inside contents | *Advanced.* Turn off to rename only |
-| Dry-run mode | *Advanced.* Scans and reports, writes nothing |
+Run:
 
-**Remove GitHub & licence files** — the button under Options, or the matching
-toggle. It deletes the files that carry the *old project's identity* rather
-than its code, leaving you the part that matters:
+```powershell
+python rebrandx\app_win.py
+```
 
-    .github/  .gitlab/  .circleci/  .travis.yml  appveyor.yml
-    LICENSE  LICENCE  COPYING  NOTICE
-    CHANGELOG  CHANGES  HISTORY  RELEASES  RELEASE-NOTES
-    AUTHORS  CONTRIBUTORS  MAINTAINERS  CODEOWNERS
-    CODE_OF_CONDUCT  CONTRIBUTING  SECURITY  SUPPORT
-    CITATION  FUNDING.yml  .all-contributorsrc
+or:
 
-`README.md`, `package.json` and your source are **not** touched by this — they
-get rebranded normally. Every pattern is editable under **Advanced › Files to
-delete**, and any single file can be kept with the ✕ beside it in the list.
+```text
+bin\rebrandx.bat
+```
 
-Deletions are backed up like everything else, and **Revert** brings them back —
-including whole folders such as `.github/`. In copy mode they are simply never
-written to the new folder, so the original is untouched either way.
+### Build a standalone EXE
 
-**Ignore flags** — `.git/`, `node_modules/` and `*.lock` are skipped by default.
-Click one to un-ignore it; `+` adds your own pattern.
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
+```
 
-**Files** (middle) — every entry, with a change count and its new name.
-The `✕` on a row skips that whole file; `↺` puts it back.
+Output:
 
-**Diff** (right) — the actual before/after lines. Every changed line has its own
-**skip** button, so you can keep individual lines exactly as they are.
+```text
+RebrandX.exe
+```
 
-**Two modes**, chosen in the toolbar:
-
-- **Rebrand in place** — rewrites the folder. A `.rebrandx-backup/` copy is kept
-  (switch it off in Settings), and **Revert** restores it.
-- **Copy to new folder** — leaves the original untouched and writes the
-  rebranded result somewhere new. Ignored paths are *not* copied, so you get a
-  clean tree; the "Copy ignored files too" setting changes that.
-
-Nothing is written until you press **Apply rebrand**, and you get a summary
-dialog before it happens.
-
-### Shortcuts
-
-`Ctrl+O` pick a folder · `Ctrl+Enter` apply · `Esc` close a dialog · `Ctrl+Q` quit
+See [`packaging/README-windows.md`](packaging/README-windows.md) for Windows-specific behavior including NTFS case-only renames, long paths and invalid Windows filenames.
 
 ---
 
-## The command line
+# Command Line
 
-The shape you'd expect — old name, new name, then one or more folders:
+Basic usage:
+
+```bash
+rbx OLD_NAME NEW_NAME PATH
+```
+
+Example:
 
 ```bash
 rbx Taskly Flowdesk ~/dev/taskly
 ```
 
+### Preview only
+
 ```bash
-rbx Taskly Flowdesk ~/dev/taskly -n          # preview only, writes nothing
+rbx Taskly Flowdesk ~/dev/taskly -n
+```
+
+### Create a renamed copy
+
+```bash
 rbx Taskly Flowdesk ~/dev/taskly --into ~/dev/flowdesk
-rbx Taskly Flowdesk ~/dev/taskly --clean       # also delete LICENSE, CHANGELOG, .github/
-rbx Taskly Flowdesk ./a ./b ./c              # several folders in one go
-rbx                                          # opens the app
 ```
 
-| Flag | |
-| --- | --- |
-| `-n`, `--dry-run` | preview, write nothing |
-| `-y`, `--yes` | skip the confirmation prompt |
-| `-i`, `--ignore-case` | match any casing |
-| `-V`, `--no-variants` | only the exact casing you typed |
-| `-e`, `--regex` | treat FIND as a regex |
-| `--into DEST` | write a copy instead of editing in place |
-| `--strip-repo` | drop lines linking to the old git remote |
-| `--clean` | delete the old project's own files (LICENSE, CHANGELOG, `.github/`, …) |
-| `--ignore GLOB` | extra ignore pattern (repeatable) |
-| `--no-default-ignores` | scan `.git/`, `node_modules/`, `*.lock` too |
-| `--no-rename` / `--no-contents` | do one half of the job only |
-| `--no-backup` | in place: skip the backup copy |
-| `-v` | list every changed file |
-| `--revert PATH` | undo the last in-place rebrand of PATH from its backup |
+### Clean old project metadata
 
-By default it asks before writing, and in-place runs keep a backup.
+```bash
+rbx Taskly Flowdesk ~/dev/taskly --clean
+```
+
+### Multiple directories
+
+```bash
+rbx Taskly Flowdesk ./a ./b ./c
+```
+
+Running `rbx` without arguments opens the desktop application.
 
 ---
 
-## How it decides what to change
+## CLI Options
 
-- **Case variants** are compiled into a *single* alternation, so one pass does
-  all the work. Replacing `task` with `taskly` can't re-match its own output.
-- **Binary files are never edited.** Anything with a NUL byte in its first 8 KB,
-  or that isn't valid UTF-8, is copied through untouched — it can still be
-  renamed. Same for files over 2 MB.
-- **Line endings and encoding are preserved.** A CRLF file stays CRLF; a file
-  with no trailing newline doesn't gain one.
-- **Renames run deepest-first**, so parent folders stay valid while their
-  children move. Collisions get a `-2` suffix rather than overwriting.
-- **Symlinks are skipped**, so a link can't walk the rebrand outside the tree.
-- **"Remove old repo lines"** only deletes a line if it *both* mentions a code
-  host (or a `"repository"` field) *and* contains the name you're replacing.
-- **The folder you point at is not itself renamed** in place — only things
-  inside it. In copy mode you choose the new folder's name directly.
-- It refuses to run on `/`, `/usr`, your home directory and similar.
+| Option                 | Purpose                                 |
+| ---------------------- | --------------------------------------- |
+| `-n`, `--dry-run`      | Preview without writing                 |
+| `-y`, `--yes`          | Skip confirmation                       |
+| `-i`, `--ignore-case`  | Match regardless of casing              |
+| `-V`, `--no-variants`  | Disable automatic case variants         |
+| `-e`, `--regex`        | Treat the find value as regex           |
+| `--into DEST`          | Write to a new directory                |
+| `--strip-repo`         | Remove references to the old repository |
+| `--clean`              | Remove old project metadata files       |
+| `--ignore GLOB`        | Add an ignore pattern                   |
+| `--no-default-ignores` | Include normally ignored paths          |
+| `--no-rename`          | Change contents only                    |
+| `--no-contents`        | Rename paths only                       |
+| `--no-backup`          | Disable in-place backup                 |
+| `-v`                   | Show every changed file                 |
+| `--revert PATH`        | Restore an in-place backup              |
 
 ---
 
-## Layout
+# Safety
 
+RebrandX is intentionally conservative.
+
+### Binary files are not edited
+
+Files containing binary data or invalid UTF-8 are left untouched internally, although their filenames can still be renamed.
+
+### Encoding is preserved
+
+RebrandX preserves:
+
+* CRLF / LF line endings
+* existing encoding behavior
+* trailing-newline state
+
+### Renames happen deepest-first
+
+Nested folders are renamed safely before their parents.
+
+Name collisions receive a suffix rather than overwriting another file.
+
+### Symlinks are skipped
+
+A symlink cannot cause RebrandX to modify content outside the selected project tree.
+
+### Dangerous roots are blocked
+
+RebrandX refuses to operate on locations such as:
+
+```text
+/
+/usr
+$HOME
 ```
+
+and similar high-risk directories.
+
+---
+
+# Architecture
+
+```text
 rebrandx/
-├── engine.py      the rebrand engine — scan, diff, apply, revert
-├── core.py        everything the UI needs that isn't a window
-├── app.py         Linux shell: GTK3 + WebKitGTK
-├── app_win.py     Windows shell: pywebview + WebView2
-├── cli.py         the rbx command
-└── ui/            index.html · app.css · app.js
-bin/               rbx, rebrandx (+ .bat versions)
-packaging/         build-deb.sh, build-windows.ps1, README-windows.md
-tests/             test_engine.py (35 checks), gui_probe.py
-share/             icons (svg, png, ico)
-install.sh         no-sudo install into ~/.local
-uninstall.sh       removes it again
+├── engine.py       Rebrand engine
+├── core.py         Shared application logic
+├── app.py          Linux GTK shell
+├── app_win.py      Windows WebView2 shell
+├── cli.py          rbx CLI
+└── ui/
+    ├── index.html
+    ├── app.css
+    └── app.js
+
+bin/                CLI / launcher scripts
+packaging/          Linux + Windows packaging
+tests/              Engine and GUI tests
+share/              App icons and branding
 ```
 
-`engine.py` is standard library only and knows nothing about any toolkit.
-`core.py` sits on top of it and answers everything the interface asks for
-except window and dialog operations — so the two shells stay identical in
-behaviour, and the CLI is a third front end over the same code.
+The architecture intentionally keeps the rename engine separate from the interface.
 
-## Tests
+```text
+             ┌─────────────┐
+             │   engine.py │
+             └──────┬──────┘
+                    │
+                ┌───▼───┐
+                │ core.py│
+                └───┬───┘
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+      Linux       Windows       CLI
+       GTK        WebView2      rbx
+```
+
+`engine.py` uses only the Python standard library and has no dependency on a GUI toolkit.
+
+---
+
+# Tests
+
+Run the engine test suite:
 
 ```bash
 python3 tests/test_engine.py
 ```
 
-35 checks over the rules, scanning, both apply modes, revert, project-file
-removal, nested renames and the Windows name rules. Pure stdlib, same results
-on both platforms. `tests/gui_probe.py` drives the real GTK window and reports
-what is actually painted.
+The suite currently covers **35 checks**, including:
+
+* replacement rules
+* scanning
+* in-place operations
+* copy mode
+* backups and revert
+* nested renames
+* project-file cleanup
+* Windows filename handling
+
+A separate GUI probe tests the actual GTK interface.
+
+```bash
+python3 tests/gui_probe.py
+```
 
 ---
 
-## Prior art
+## Keyboard Shortcuts
 
-The tool this resembles is **`repren`** — same idea of one pass over contents
-*and* filenames with case variants. `rpl`, `sd`, `fastmod` and plain
-`find | sed` cover parts of it. RebrandX's angle is the preview: seeing the
-diff and skipping individual lines before committing to the rewrite.
+| Shortcut       | Action        |
+| -------------- | ------------- |
+| `Ctrl + O`     | Open folder   |
+| `Ctrl + Enter` | Apply rebrand |
+| `Esc`          | Close dialog  |
+| `Ctrl + Q`     | Quit          |
 
 ---
 
-## Assets
+## Built With
 
-| File | |
-| --- | --- |
-| `share/rebrandx.svg` | app mark, vector |
-| `share/rebrandx.png` | app mark, 256px |
-| `share/rebrandx.ico` | Windows icon, 7 sizes from 16 to 256 |
-| `share/banner.svg` | repo header |
-| `share/banner.png` | repo header, rendered |
+* Python
+* GTK 3
+* WebKitGTK
+* WebView2
+* pywebview
 
-All of them are generated from the same mark: a rounded square with the
-`#32302a → #141310` gradient, the brand strip across the top, and the brass
-`+` that stands for the rename. Colours come from the Porcelain palette the
-interface uses.
+The Linux and Windows interfaces share the same underlying RebrandX engine.
 
-## Credits
+---
 
-The interface follows a design handoff — the Porcelain theme, the three
-column layout and the interaction model are from that spec. Built with
-[Claude Code](https://claude.com/claude-code).
+<p align="center">
+  <b>Rebrand the project — not your afternoon.</b>
+</p>
