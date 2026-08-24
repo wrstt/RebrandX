@@ -1,0 +1,4 @@
+#!/bin/sh
+# RebrandX — launch the app window.
+# Must run on the system python: it is the one with GTK + WebKit bindings.
+exec /usr/bin/python3 "$(dirname "$(dirname "$(readlink -f "$0")")")/rebrandx/app.py" "$@"

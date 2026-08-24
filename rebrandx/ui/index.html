@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RebrandX</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="brandstrip"></div>
+
+  <!-- ---------- header ---------- -->
+  <header class="hdr" id="hdr">
+    <div class="mark-wrap">
+      <div class="mark">R</div>
+      <div class="appname">RebrandX</div>
+    </div>
+    <div class="grow"></div>
+    <button class="pill-folder" id="folderPill" title="Change source folder">
+      <span class="home">&#8962;</span>
+      <span class="path" id="folderPath">&#8230;</span>
+      <span class="caret">&#9662;</span>
+    </button>
+    <div class="grow"></div>
+    <button class="gear" id="gearBtn" title="Settings">&#9881;</button>
+    <div class="wc">
+      <button class="min" id="btnMin" title="Minimize">&#9472;</button>
+      <button class="max" id="btnMax" title="Maximize">&#9633;</button>
+      <button class="close" id="btnClose" title="Close">&#10005;</button>
+    </div>
+
+    <div class="pop picker" id="picker" hidden>
+      <div class="lbl">Recent folders</div>
+      <div id="recents"></div>
+      <button class="browse" id="browseBtn">Browse for folder&#8230;</button>
+    </div>
+
+    <div class="pop settings" id="settings" hidden>
+      <div class="lbl">Settings</div>
+      <div id="settingsRows"></div>
+    </div>
+  </header>
+
+  <!-- ---------- toolbar ---------- -->
+  <div class="toolbar">
+    <div class="seg">
+      <button id="modeInplace">Rebrand in place</button>
+      <button id="modeCopy">Copy to new folder</button>
+    </div>
+    <div class="destwrap" id="destWrap" hidden>
+      <input class="inp dest" id="destInput" spellcheck="false" placeholder="~/dev/newname">
+      <button class="mini" id="destPick" title="Choose destination">&#8230;</button>
+    </div>
+    <div class="status-pill" id="dryPill" hidden><i></i>Dry run</div>
+    <div class="grow"></div>
+    <button class="cta" id="applyBtn">Apply rebrand</button>
+    <div class="applied-wrap" id="appliedWrap" hidden>
+      <div class="applied-chip"><i></i>Applied</div>
+      <button class="ghost" id="revertBtn">Revert</button>
+    </div>
+  </div>
+
+  <!-- ---------- main ---------- -->
+  <div class="main">
+
+    <aside class="col-rules">
+      <div class="group">
+        <div class="lbl">Rebrand rules</div>
+        <input class="inp find" id="findInput" spellcheck="false" placeholder="Find">
+        <div class="arrow">&#8595;</div>
+        <input class="inp repl" id="replInput" spellcheck="false" placeholder="Replace with">
+        <div class="chips" id="chips"></div>
+      </div>
+
+      <div class="group tight">
+        <div class="lbl">Options</div>
+        <div id="toggles"></div>
+        <button class="quick" id="ghBtn" title="">Remove GitHub &amp; licence files</button>
+        <button class="disclose" id="advBtn"><span id="advArrow">&#9656;</span> Advanced</button>
+        <div id="advPanel" hidden>
+          <div id="advToggles"></div>
+          <div class="flags" id="flags"></div>
+          <div id="projGlobs" hidden></div>
+          <button class="preset" id="presetBtn">Old project preset</button>
+        </div>
+      </div>
+    </aside>
+
+    <aside class="col-files">
+      <div class="lbl" id="filesLabel">Files</div>
+      <div id="fileList"></div>
+    </aside>
+
+    <section class="col-diff" id="diffCol"></section>
+  </div>
+
+  <!-- ---------- status ---------- -->
+  <footer class="status">
+    <span><b id="sFiles">0</b> files changed</span>
+    <span><b id="sRepl">0</b> replacements</span>
+    <span><b id="sRen">0</b> renames</span>
+    <span><b id="sRem">0</b> lines removed</span>
+    <span><b id="sDrop">0</b> files deleted</span>
+    <span class="warn" id="sWarn" hidden></span>
+    <span class="grow"></span>
+    <span class="mode" id="sMode">Preview</span>
+  </footer>
+</div>
+
+<div class="edge n" data-edge="n"></div><div class="edge s" data-edge="s"></div>
+<div class="edge w" data-edge="w"></div><div class="edge e" data-edge="e"></div>
+<div class="edge nw" data-edge="nw"></div><div class="edge ne" data-edge="ne"></div>
+<div class="edge sw" data-edge="sw"></div><div class="edge se" data-edge="se"></div>
+
+<div id="overlay"></div>
+<div id="toastHost"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
