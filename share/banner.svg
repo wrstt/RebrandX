@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300"
+     font-family="Ubuntu, DejaVu Sans, sans-serif">
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#f4f2ec"/><stop offset="0.55" stop-color="#faf9f5"/>
+    </linearGradient>
+    <linearGradient id="strip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1c1b18"/><stop offset=".5" stop-color="#8a8578"/>
+      <stop offset="1" stop-color="#b08d2f"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#32302a"/><stop offset="1" stop-color="#141310"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#page)"/>
+  <rect width="1200" height="6" fill="url(#strip)"/>
+
+  <!-- app mark -->
+  <g transform="translate(84,96)">
+    <rect width="108" height="108" rx="26" fill="url(#mark)"/>
+    <rect width="108" height="8" rx="4" fill="url(#strip)"/>
+    <text x="54" y="79" font-size="62" font-weight="700" fill="#faf9f5" text-anchor="middle">R</text>
+    <path d="M76 84 h18 M85 75 v18" stroke="#b08d2f" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="232" y="140" font-size="54" font-weight="700" fill="#26241f">RebrandX</text>
+  <text x="234" y="175" font-size="19" fill="rgba(38,36,31,.7)">
+    Rename a project everywhere at once — contents, file names, folder names.
+  </text>
+
+  <!-- the actual transformation, in the app's own type and colours -->
+  <g font-family="Ubuntu Mono, DejaVu Sans Mono, monospace" font-size="16">
+    <g transform="translate(234,205)">
+      <rect width="196" height="30" rx="15" fill="rgba(164,68,58,.08)" stroke="rgba(164,68,58,.4)"/>
+      <text x="18" y="20" fill="#8c352c">src/taskly-core.js</text>
+    </g>
+    <path d="M444 220 h20 M457 213 l7 7 -7 7" fill="none" stroke="rgba(38,36,31,.45)"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(474,205)">
+      <rect width="212" height="30" rx="15" fill="rgba(176,141,47,.1)" stroke="rgba(138,109,31,.4)"/>
+      <text x="18" y="20" fill="#77601c">src/flowdesk-core.js</text>
+    </g>
+  </g>
+
+  <!-- platform chips -->
+  <g font-family="Ubuntu Mono, DejaVu Sans Mono, monospace" font-size="12"
+     letter-spacing="1.6" fill="rgba(38,36,31,.55)">
+    <g transform="translate(940,120)">
+      <rect width="176" height="30" rx="8" fill="rgba(28,27,24,.06)" stroke="rgba(38,36,31,.14)"/>
+      <text x="20" y="20">UBUNTU · GTK + WEBKIT</text>
+    </g>
+    <g transform="translate(940,160)">
+      <rect width="176" height="30" rx="8" fill="rgba(28,27,24,.06)" stroke="rgba(38,36,31,.14)"/>
+      <text x="20" y="20">WINDOWS · WEBVIEW2</text>
+    </g>
+  </g>
+</svg>

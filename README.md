@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="share/banner.svg" alt="RebrandX" width="100%">
+</p>
+
 # RebrandX
 
 Rebrand a folder. Point it at a project, give it an old name and a new one, and
@@ -75,6 +79,8 @@ compile and no `pip install` — RebrandX is pure Python on the system GTK stack
 ---
 
 ## The app
+
+<!-- Screenshots go in docs/. Drop a PNG there and reference it here. -->
 
 One window, three columns.
 
@@ -235,3 +241,26 @@ The tool this resembles is **`repren`** — same idea of one pass over contents
 *and* filenames with case variants. `rpl`, `sd`, `fastmod` and plain
 `find | sed` cover parts of it. RebrandX's angle is the preview: seeing the
 diff and skipping individual lines before committing to the rewrite.
+
+---
+
+## Assets
+
+| File | |
+| --- | --- |
+| `share/rebrandx.svg` | app mark, vector |
+| `share/rebrandx.png` | app mark, 256px |
+| `share/rebrandx.ico` | Windows icon, 7 sizes from 16 to 256 |
+| `share/banner.svg` | repo header |
+| `share/banner.png` | repo header, rendered |
+
+All of them are generated from the same mark: a rounded square with the
+`#32302a → #141310` gradient, the brand strip across the top, and the brass
+`+` that stands for the rename. Colours come from the Porcelain palette the
+interface uses.
+
+## Credits
+
+The interface follows a design handoff — the Porcelain theme, the three
+column layout and the interaction model are from that spec. Built with
+[Claude Code](https://claude.com/claude-code).
