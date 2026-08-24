@@ -123,8 +123,33 @@ def main(argv=None):
             pass
 
     window.events.closing += on_closing
-    webview.start(debug=bool(os.environ.get("REBRANDX_DEBUG")))
+    try:
+        webview.start(debug=bool(os.environ.get("REBRANDX_DEBUG")))
+    except Exception as exc:
+        # Almost always a missing WebView2 runtime. It ships with Windows 10
+        # and 11, but not with Server images, stripped installs, or Wine --
+        # so say what is wrong instead of exiting silently.
+        _fatal(
+            "RebrandX could not open its window.\n\n"
+            "%s\n\n"
+            "This usually means the Microsoft Edge WebView2 runtime is "
+            "missing. Install the Evergreen Runtime from:\n\n"
+            "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
+            "The command line does not need it:  rbx OldName NewName PATH"
+            % exc)
+        return 3
     return 0
+
+
+def _fatal(message: str) -> None:
+    """Show the error in a dialog when there is no console to print to."""
+    sys.stderr.write(message + "\n")
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, message, "RebrandX", 0x10)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
