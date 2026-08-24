@@ -818,9 +818,12 @@ def safe_rename(src: Path, dst: Path) -> Path:
     existence check would treat a case-only rebrand as a collision and
     invent `Foo-2.js`. Going via a temporary name does it properly.
     """
-    if src == dst:
+    # Compare as strings: Path equality is case-INSENSITIVE on Windows, so
+    # `src == dst` is true for a.js vs A.js and would skip the rename that
+    # this whole function exists to perform.
+    if str(src) == str(dst):
         return dst
-    if str(src) != str(dst) and str(src).lower() == str(dst).lower():
+    if str(src).lower() == str(dst).lower():
         tmp = src.with_name(src.name + ".rbx-tmp")
         i = 0
         while tmp.exists():
