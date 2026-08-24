@@ -42,11 +42,14 @@ button{cursor:pointer}
 .app.maxed .brandstrip{border-radius:0}
 
 /* ---------- header ---------- */
-.hdr{
+/* WebView2 (Windows) drags a frameless window via this property; WebKitGTK
+   ignores it and uses the begin_move_drag bridge in app.js instead. */
+.hdr{-webkit-app-region:drag;
   display:flex;align-items:center;gap:12px;padding:8px 12px 8px 16px;
   background:rgba(250,249,245,.8);backdrop-filter:blur(8px);
   border-bottom:1px solid var(--border);flex:none;position:relative;
 }
+.hdr button,.hdr input,.hdr .pop{-webkit-app-region:no-drag}
 .mark-wrap{display:flex;align-items:center;gap:10px}
 .mark{width:26px;height:26px;border-radius:8px;background:var(--cta);color:var(--accent-fg);
   font-weight:700;font-size:14px;display:grid;place-items:center;box-shadow:0 4px 15px rgba(28,27,24,.3)}

@@ -578,6 +578,8 @@ def scan(root_str: str, opts: Options, *, progress: Callable[[int], None] | None
             if not excluded:
                 np, rn = diff_path(rel, rules, opts, rel in opts.skipped_files)
                 item["newPath"], item["renamed"] = np, rn
+                if rn:
+                    item["winWarn"] = windows_unsafe(np.rsplit("/", 1)[-1])
             res.entries.append(item)
             continue
         if excluded:
@@ -587,6 +589,8 @@ def scan(root_str: str, opts: Options, *, progress: Callable[[int], None] | None
         d = diff_file(root, rel, rules, opts, want_rows=False)
         item.update(count=d.count, removed=d.removed, newPath=d.new_path,
                     renamed=d.renamed, binary=d.binary, tooBig=d.too_big)
+        if d.renamed:
+            item["winWarn"] = windows_unsafe(d.new_path.rsplit("/", 1)[-1])
         res.entries.append(item)
 
         if d.count or d.removed or d.renamed:
@@ -773,17 +777,62 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
         parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
         dst_parent = current(parent) if parent else ""
         dst_rel = (dst_parent + "/" if dst_parent else "") + new.rsplit("/", 1)[-1]
-        dst = root / dst_rel
-        if dst.exists():
-            dst = _unique(dst)
-            dst_rel = str(dst.relative_to(root))
-        os.rename(src, dst)
+        dst = safe_rename(src, root / dst_rel)
+        dst_rel = str(dst.relative_to(root)).replace(os.sep, "/")
         moved[rel] = dst_rel
         manifest["renames"].append([rel, dst_rel])
 
     if backup:
         (backup_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2))
     return {**manifest, "files": files, "dropped": dropped}
+
+
+# Names Windows will not accept. Checked on every platform so a project
+# rebranded on Linux still opens on Windows.
+WIN_BAD_CHARS = set('<>:"|?*')
+WIN_RESERVED = {"CON", "PRN", "AUX", "NUL"} | \
+    {"COM%d" % i for i in range(1, 10)} | {"LPT%d" % i for i in range(1, 10)}
+
+
+def windows_unsafe(name: str) -> str | None:
+    """Why Windows would reject this file name, or None if it is fine."""
+    if not name:
+        return None
+    bad = sorted(set(name) & WIN_BAD_CHARS)
+    if bad:
+        return "cannot contain %s" % " ".join(bad)
+    if any(ord(c) < 32 for c in name):
+        return "cannot contain control characters"
+    stem = name.split(".")[0].upper()
+    if stem in WIN_RESERVED:
+        return "%s is a reserved device name" % stem
+    if name[-1] in " .":
+        return "cannot end with a space or a dot"
+    return None
+
+
+def safe_rename(src: Path, dst: Path) -> Path:
+    """Rename, coping with case-insensitive filesystems.
+
+    On NTFS and APFS `foo.js` and `Foo.js` are the same file, so a plain
+    existence check would treat a case-only rebrand as a collision and
+    invent `Foo-2.js`. Going via a temporary name does it properly.
+    """
+    if src == dst:
+        return dst
+    if str(src) != str(dst) and str(src).lower() == str(dst).lower():
+        tmp = src.with_name(src.name + ".rbx-tmp")
+        i = 0
+        while tmp.exists():
+            i += 1
+            tmp = src.with_name("%s.rbx-tmp%d" % (src.name, i))
+        os.rename(src, tmp)
+        os.rename(tmp, dst)
+        return dst
+    if dst.exists():
+        dst = _unique(dst)
+    os.rename(src, dst)
+    return dst
 
 
 def _unique(p: Path) -> Path:
@@ -817,9 +866,9 @@ def revert(manifest: dict) -> str:
             continue
         parent = new.rsplit("/", 1)[0] if "/" in new else ""
         dst = root / ((parent + "/" if parent else "") + rel.rsplit("/", 1)[-1])
-        if dst.exists():
+        if dst.exists() and str(src).lower() != str(dst).lower():
             continue
-        os.rename(src, dst)
+        safe_rename(src, dst)
     bdir = manifest.get("backup")
     n = 0
     if bdir and Path(bdir).is_dir():

@@ -6,18 +6,34 @@ const _pending = new Map();
 let _seq = 0;
 const _handlers = {};
 
+// Two transports, one API. Linux runs inside WebKitGTK and posts messages
+// that Python answers via __rbx_reply; Windows runs inside WebView2 where
+// pywebview exposes an async api object directly.
+const HAS_WEBKIT = !!(window.webkit && window.webkit.messageHandlers
+                      && window.webkit.messageHandlers.rbx);
+
 function call(method, params) {
-  return new Promise((resolve, reject) => {
-    const id = ++_seq;
-    _pending.set(id, [resolve, reject]);
-    try {
-      window.webkit.messageHandlers.rbx.postMessage(
-        JSON.stringify({ id, method, params: params || {} }));
-    } catch (e) {
-      _pending.delete(id);
-      reject(new Error('bridge unavailable'));
-    }
-  });
+  params = params || {};
+  if (HAS_WEBKIT) {
+    return new Promise((resolve, reject) => {
+      const id = ++_seq;
+      _pending.set(id, [resolve, reject]);
+      try {
+        window.webkit.messageHandlers.rbx.postMessage(
+          JSON.stringify({ id, method, params }));
+      } catch (e) {
+        _pending.delete(id);
+        reject(new Error('bridge unavailable'));
+      }
+    });
+  }
+  if (window.pywebview && window.pywebview.api) {
+    return window.pywebview.api.rpc(method, params).then((r) => {
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'call failed');
+      return r.value;
+    });
+  }
+  return Promise.reject(new Error('bridge unavailable'));
 }
 window.__rbx_reply = (id, payload, error) => {
   const p = _pending.get(id);
@@ -631,13 +647,14 @@ function bind() {
     if (e.button !== 0) return;
     if (e.target.closest('button,input,.pop')) return;
     if (S.pickerOpen || S.settingsOpen) { closePops(); return; }
-    call('window.drag', { x: e.screenX, y: e.screenY });
+    if (HAS_WEBKIT) call('window.drag', { x: e.screenX, y: e.screenY });
   });
   $('hdr').addEventListener('dblclick', (e) => {
     if (e.target.closest('button,input,.pop')) return;
     toggleMax();
   });
   document.querySelectorAll('.edge').forEach((el) => {
+    if (!HAS_WEBKIT) { el.style.display = 'none'; return; }  // WebView2 resizes natively
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       call('window.resize', { edge: el.dataset.edge, x: e.screenX, y: e.screenY });
@@ -741,5 +758,18 @@ on('progress', (p) => {
   path.textContent = p.path;
 });
 
-bind();
-render();
+function boot() {
+  bind();
+  render();
+  if (HAS_WEBKIT) return;                 // GTK shell pushes 'boot' itself
+  window.addEventListener('pywebviewready', pullBoot);
+  if (window.pywebview && window.pywebview.api) pullBoot();
+}
+
+function pullBoot() {
+  if (boot._done) return;
+  boot._done = true;
+  window.pywebview.api.boot().then((p) => window.__rbx_event('boot', p));
+}
+
+boot();

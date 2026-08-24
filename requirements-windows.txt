@@ -1,0 +1,2 @@
+# Windows only. Linux uses the system GTK/WebKit bindings and needs nothing.
+pywebview>=5.0

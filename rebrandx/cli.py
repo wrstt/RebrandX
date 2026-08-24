@@ -22,6 +22,14 @@ C = {"dim": "\033[2m", "red": "\033[31m", "grn": "\033[33m", "bold": "\033[1m",
 
 
 def paint(on: bool):
+    if on and os.name == "nt":
+        # Windows consoles need VT processing switched on before ANSI works.
+        try:
+            import ctypes
+            k = ctypes.windll.kernel32
+            k.SetConsoleMode(k.GetStdHandle(-11), 7)
+        except Exception:
+            return {k: "" for k in C}
     return C if on else {k: "" for k in C}
 
 
@@ -144,8 +152,12 @@ def main(argv=None) -> int:
         return rc
 
     if a.gui or (not a.find and not a.replace and not a.paths):
-        from rebrandx.app import main as gui_main
-        return gui_main([sys.argv[0]] + ([a.paths[0]] if a.paths else []))
+        args = [sys.argv[0]] + ([a.paths[0]] if a.paths else [])
+        if os.name == "nt":
+            from rebrandx.app_win import main as gui_main
+        else:
+            from rebrandx.app import main as gui_main
+        return gui_main(args)
 
     if not a.find or not a.replace or not a.paths:
         build_parser().print_usage(sys.stderr)

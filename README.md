@@ -4,7 +4,9 @@ Rebrand a folder. Point it at a project, give it an old name and a new one, and
 it replaces that name across **file contents, file names and folder names** —
 showing you every change as a diff before anything is written.
 
-Built for Ubuntu. Ships as a desktop app and as an `rbx` command.
+Runs on **Ubuntu** and **Windows**, as a desktop app and as an `rbx` command.
+One engine, one interface — only the window differs (GTK + WebKitGTK on Linux,
+WebView2 on Windows).
 
 ---
 
@@ -34,6 +36,28 @@ Either way you then get:
 - **A double-clickable icon on the Desktop** (Option B)
 - **Right-click any folder in Files → Scripts → Rebrand with RebrandX**
 - `rbx` in the terminal
+
+### Windows
+
+WebView2 ships with Windows 10 and 11, so there is no runtime to install.
+
+```
+pip install pywebview
+python rebrandx\app_win.py
+```
+
+Or double-click `bin\rebrandx.bat`. To build a standalone `RebrandX.exe`:
+
+```
+powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
+```
+
+That must run *on* Windows — PyInstaller cannot cross-compile. The repo's CI
+also builds it on every push; grab it from the run's artifacts.
+
+See [packaging/README-windows.md](packaging/README-windows.md) for the
+Windows-specific details (case-only renames on NTFS, illegal file names,
+long paths).
 
 ### Requirements
 
@@ -170,21 +194,36 @@ By default it asks before writing, and in-place runs keep a backup.
 ## Layout
 
 ```
-~/.local/share/rebrandx/
-├── rebrandx/
-│   ├── engine.py     the rebrand engine — scan, diff, apply, revert
-│   ├── app.py        GTK3 window hosting the WebKit UI + the JS bridge
-│   ├── cli.py        the rbx command
-│   └── ui/           index.html · app.css · app.js
-├── bin/              rbx, rebrandx launchers
-├── packaging/        build-deb.sh
-├── share/            app icon
-├── install.sh        no-sudo install into ~/.local
-└── uninstall.sh      removes it again
+rebrandx/
+├── engine.py      the rebrand engine — scan, diff, apply, revert
+├── core.py        everything the UI needs that isn't a window
+├── app.py         Linux shell: GTK3 + WebKitGTK
+├── app_win.py     Windows shell: pywebview + WebView2
+├── cli.py         the rbx command
+└── ui/            index.html · app.css · app.js
+bin/               rbx, rebrandx (+ .bat versions)
+packaging/         build-deb.sh, build-windows.ps1, README-windows.md
+tests/             test_engine.py (35 checks), gui_probe.py
+share/             icons (svg, png, ico)
+install.sh         no-sudo install into ~/.local
+uninstall.sh       removes it again
 ```
 
-`engine.py` imports nothing but the standard library and knows nothing about
-GTK — the app and the CLI are two front ends over the same code.
+`engine.py` is standard library only and knows nothing about any toolkit.
+`core.py` sits on top of it and answers everything the interface asks for
+except window and dialog operations — so the two shells stay identical in
+behaviour, and the CLI is a third front end over the same code.
+
+## Tests
+
+```bash
+python3 tests/test_engine.py
+```
+
+35 checks over the rules, scanning, both apply modes, revert, project-file
+removal, nested renames and the Windows name rules. Pure stdlib, same results
+on both platforms. `tests/gui_probe.py` drives the real GTK window and reports
+what is actually painted.
 
 ---
 
