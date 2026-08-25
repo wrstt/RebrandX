@@ -116,13 +116,29 @@ jobs:
       - name: Installer dry run
         run: powershell -ExecutionPolicy Bypass -File install.ps1 -DryRun
 
-      # The whole point of the native window: nothing to install.
-      - name: No third-party packages are needed
-        shell: pwsh
+      # The whole point of the native window: nothing to install. Asserted
+      # by importing the app and checking what it actually pulled in --
+      # the runner image ships pipx and friends, so an empty `pip freeze`
+      # was never the right question.
+      - name: The app imports using only the standard library
+        shell: python
         run: |
-          $out = python -m pip freeze
-          if ($out) { throw "expected a clean environment, got: $out" }
-          python -c "import rebrandx.app_tk; print('app imports with stdlib only')"
+          import sys
+          # `shell: python` runs from a temp file, so the checkout is on the
+          # working directory rather than on sys.path.
+          sys.path.insert(0, ".")
+          import rebrandx.app_tk  # noqa: F401
+
+          allowed = set(sys.stdlib_module_names) | {"rebrandx"}
+          extra = sorted({
+              name.split(".")[0] for name in sys.modules
+              if not name.startswith("_")
+              and name.split(".")[0] not in allowed
+          })
+          if extra:
+              sys.exit("third-party imports reached: %s" % ", ".join(extra))
+          print("stdlib only: %d modules, no third-party imports"
+                % len(sys.modules))
 
       - name: Install for real
         run: powershell -ExecutionPolicy Bypass -File install.ps1 -NoDesktopIcon
