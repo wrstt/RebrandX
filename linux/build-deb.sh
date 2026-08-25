@@ -1,9 +1,9 @@
 #!/bin/bash
 # Build rebrandx_<version>_all.deb — a normal Ubuntu package.
-#   ./linux/build-deb.sh    then:   sudo apt install ./dist/linux/rebrandx_1.1.0_all.deb
+#   ./linux/build-deb.sh    then:   sudo apt install ./dist/linux/rebrandx_1.2.0_all.deb
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$HERE/build/deb"
 DIST="$HERE/dist/linux"

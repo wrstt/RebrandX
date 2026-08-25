@@ -24,7 +24,7 @@ linux/
 
 ```bash
 ./linux/build-deb.sh
-sudo apt install ./dist/linux/rebrandx_1.1.0_all.deb
+sudo apt install ./dist/linux/rebrandx_1.2.0_all.deb
 ```
 
 Installs `rebrandx` and `rbx` into `/usr/bin`, the app into

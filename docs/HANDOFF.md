@@ -137,5 +137,5 @@ open on Windows. It runs on both, and CI runs it on both.
 - `windows/build.ps1` is the only PowerShell left. It could become
   `packaging`-free Python (`build.py`) and absorb the Wine route, leaving one
   build script for both.
-- Version `1.1.0` is hard-coded in `windows/build.ps1` and
+- Version `1.2.0` is hard-coded in `windows/build.ps1` and
   `linux/build-deb.sh` separately. They will drift.

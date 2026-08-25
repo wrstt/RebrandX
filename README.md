@@ -193,7 +193,7 @@ On Windows there is nothing to install — build or download the `.exe` and run 
 cd ~/.local/share/rebrandx
 ./linux/build-deb.sh
 
-sudo apt install ~/.local/share/rebrandx/dist/linux/rebrandx_1.1.0_all.deb
+sudo apt install ~/.local/share/rebrandx/dist/linux/rebrandx_1.2.0_all.deb
 ```
 
 This installs both:
@@ -409,7 +409,7 @@ rebrandx/           the app — shared by both platforms
 └── splash.py       the launch screen       ─┘
 
 linux/              Linux only
-├── build-deb.sh    → dist/linux/rebrandx_1.1.0_all.deb
+├── build-deb.sh    → dist/linux/rebrandx_1.2.0_all.deb
 ├── install.sh      wire the checkout into GNOME
 ├── uninstall.sh    take it back out
 └── bin/            rbx, rebrandx
