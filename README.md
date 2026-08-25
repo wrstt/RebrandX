@@ -426,6 +426,8 @@ tests/              engine and GUI tests, both platforms
 share/              icons and branding
 ```
 
+Picking this up cold, or coming back to it later? [`docs/HANDOFF.md`](docs/HANDOFF.md) is the state of the project and the reasoning behind the decisions that look arbitrary from outside.
+
 Each platform folder has its own README:
 [`linux/README.md`](linux/README.md) and
 [`windows/README.md`](windows/README.md).
