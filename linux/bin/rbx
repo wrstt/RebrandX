@@ -1,0 +1,4 @@
+#!/bin/sh
+# rbx — RebrandX command line. With no arguments it opens the app window.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
+exec /usr/bin/python3 "$ROOT/rebrandx/cli.py" "$@"

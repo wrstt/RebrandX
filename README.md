@@ -181,7 +181,9 @@ Individual changed lines can be excluded before applying the rebrand.
 
 ---
 
-## Install
+## Getting it
+
+On Windows there is nothing to install — build or download the `.exe` and run it. Ubuntu has the usual packaging, since that is what a Linux desktop expects.
 
 ### Ubuntu
 
@@ -189,9 +191,9 @@ Individual changed lines can be excluded before applying the rebrand.
 
 ```bash
 cd ~/.local/share/rebrandx
-./packaging/build-deb.sh
+./linux/build-deb.sh
 
-sudo apt install ~/.local/share/rebrandx/dist/rebrandx_1.1.0_all.deb
+sudo apt install ~/.local/share/rebrandx/dist/linux/rebrandx_1.1.0_all.deb
 ```
 
 This installs both:
@@ -208,19 +210,19 @@ and registers RebrandX with GNOME.
 No sudo:
 
 ```bash
-./install.sh
+./linux/install.sh
 ```
 
 Optional:
 
 ```bash
-./install.sh --no-desktop-icon
+./linux/install.sh --no-desktop-icon
 ```
 
 Remove later with:
 
 ```bash
-./uninstall.sh
+./linux/uninstall.sh
 ```
 
 ### Linux requirements
@@ -231,49 +233,53 @@ sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
 
 RebrandX uses the system GTK stack and does not require a Python package environment for the Linux desktop build.
 
+See [`linux/README.md`](linux/README.md) for the Linux side in detail — what each script does, and the tkinter fallback when the GTK bindings are missing.
+
 ---
 
 ### Windows
 
-Needs [Python 3.8+](https://www.python.org/downloads/) — and nothing else. The window is a native desktop app built on tkinter, which ships with Python. No runtime, no browser engine, no packages to install, and it works entirely offline.
+RebrandX on Windows is a **portable app**. There is no installer, no setup, no registry keys and nothing in Program Files: one `.exe` that you keep wherever you like and delete when you are done with it.
 
-#### Standalone .exe (no install)
+#### The .exe
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
+powershell -ExecutionPolicy Bypass -File windows\build.ps1
 ```
 
 Produces two self-contained files that need no Python and no install step:
 
 ```text
-dist\RebrandX.exe          the app — double-click it
-dist\rbx.exe               the command line
-dist\RebrandX-windows.zip  both, ready to hand to someone
+dist\windows\RebrandX.exe          the app — double-click it
+dist\windows\rbx.exe               the command line — and the app, double-clicked
+dist\windows\RebrandX-windows.zip  both, ready to hand to someone
 ```
 
-Put them anywhere. Every release also ships them as build artifacts.
+Put either one on a USB stick, in `C:\Tools`, on your Desktop — anywhere. Every release also ships them as build artifacts, so you can skip the build entirely and just download the file.
+
+Either file works on its own. `rbx.exe` prints and waits like a normal
+command when you give it arguments, opens the window when you double-click
+it or run it bare, and opens the window on a folder you drop onto it — no
+terminal appears in either of those cases. To see what a copy of it is made
+of:
+
+```powershell
+dist\windows\rbx.exe --self-test
+```
+
+Want it on your PATH or in the Start menu? Move the `.exe` into a folder that is already on your PATH, or right-click it → **Pin to Start**. Windows does that part; RebrandX does not need to write to your registry to arrange it.
 
 #### Run from source
+
+Needs [Python 3.8+](https://www.python.org/downloads/) — and nothing else. The window is built on tkinter, which ships with Python, so there is no runtime, no browser engine and nothing to `pip install`.
 
 ```powershell
 python rebrandx\app_tk.py
 ```
 
-Nothing to install first. Or double-click `bin\rebrandx.bat`; for the command line, `bin\rbx.bat`.
+Or double-click `windows\bin\rebrandx.bat`; for the command line, `windows\bin\rbx.bat`.
 
-#### Optional: register it with Windows
-
-If you would rather have it in the Start menu than run a loose `.exe`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-That adds a Start menu entry, a desktop shortcut, `rbx` and `rebrandx` on your PATH, and a **Rebrand with RebrandX** item on the right-click menu of any folder. Everything is per-user — no admin rights, nothing outside `HKCU` and `%LOCALAPPDATA%`.
-
-Preview it with `-DryRun`, tune it with `-NoDesktopIcon` / `-NoContextMenu` / `-NoPath`, and undo it with `uninstall.ps1`.
-
-See [`packaging/README-windows.md`](packaging/README-windows.md) for Windows-specific behaviour — NTFS case-only renames, long paths, invalid filenames, encodings and read-only files.
+See [`windows/README.md`](windows/README.md) for Windows-specific behaviour — NTFS case-only renames, long paths, invalid filenames, encodings and read-only files.
 
 ---
 
@@ -383,23 +389,52 @@ and similar high-risk directories.
 
 # Architecture
 
-```text
-rebrandx/
-├── engine.py       Rebrand engine
-├── core.py         Shared application logic
-├── app_tk.py       native desktop window (Windows + fallback)
-├── widgets.py      the drawn controls it is built from
-├── theme.py        palette and ttk styling
-├── win.py          Windows filesystem + console primitives
-├── app.py          Linux GTK shell
-├── cli.py          rbx CLI
-└── ui/             assets for the GTK shell
+One app, two platforms. The engine is shared; the window and the packaging
+are not, and the repo says so out loud — everything Linux-only lives in
+`linux/`, everything Windows-only in `windows/`, and each builds into its
+own half of `dist/`.
 
-bin/                CLI / launcher scripts
-packaging/          Linux + Windows packaging
-tests/              Engine and GUI tests
-share/              App icons and branding
+```text
+rebrandx/           the app — shared by both platforms
+├── engine.py       the rebrand engine
+├── core.py         shared application logic
+├── cli.py          the rbx command line
+├── win.py          Windows filesystem + console primitives
+├── app_gtk.py      the GTK window          ─┐ Linux
+├── ui_gtk/         its HTML/CSS/JS assets  ─┘
+├── app_tk.py       the native window       ─┐ Windows
+├── widgets.py      the drawn controls       │ (and the Linux fallback
+├── theme.py        palette and ttk styling  │  when GTK is missing)
+├── anim.py         easing and timers        │
+└── splash.py       the launch screen       ─┘
+
+linux/              Linux only
+├── build-deb.sh    → dist/linux/rebrandx_1.1.0_all.deb
+├── install.sh      wire the checkout into GNOME
+├── uninstall.sh    take it back out
+└── bin/            rbx, rebrandx
+
+windows/            Windows only
+├── build.ps1       → dist/windows/RebrandX.exe, rbx.exe, the portable zip
+├── build-under-wine.sh   the same build, driven from a Linux box
+└── bin/            rbx.bat, rebrandx.bat
+
+dist/linux/         the .deb
+dist/windows/       the .exe files and the portable zip
+tools/              make-icon.py — regenerates the icon set from the SVG
+tests/              engine and GUI tests, both platforms
+share/              icons and branding
 ```
+
+Each platform folder has its own README:
+[`linux/README.md`](linux/README.md) and
+[`windows/README.md`](windows/README.md).
+
+The `rebrandx/` package deliberately is **not** split by platform. The
+engine, the safety rules, the encoding handling and the CLI are one
+codebase — forking them per OS would mean fixing every bug twice. Only the
+window differs, and the two windows sit next to each other under names that
+say which is which.
 
 The architecture intentionally keeps the rename engine separate from the interface.
 

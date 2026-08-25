@@ -1,16 +1,17 @@
 <#
     Build RebrandX for Windows.
 
-        powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
+        powershell -ExecutionPolicy Bypass -File windows\build.ps1
 
-    Produces, in dist\:
+    Produces, in dist\windows\:
 
         RebrandX.exe        the app window, self-contained, no console
-        rbx.exe             the command line, self-contained
+        rbx.exe             the command line, self-contained -- and the app
+                            when it is double-clicked or run with no arguments
         RebrandX-windows.zip  both of the above, ready to hand to someone
 
     Must run ON Windows -- PyInstaller cannot cross-compile. See
-    packaging\README-windows.md for the CI and Wine routes from Linux.
+    windows\README.md for the CI and Wine routes from Linux.
 
     Options:
         -NoZip        skip the portable archive
@@ -68,7 +69,9 @@ Write-Host "  python $ver ($PyExe)"
 Write-Host "  installing build dependencies..."
 # PyInstaller is the only build dependency. The app itself has none:
 # the window is tkinter, which is part of the standard library.
-$deps = @("-m", "pip", "install", "--quiet", "--upgrade", "pip", "pyinstaller")
+# 6.0+ for --hide-console, which is what keeps a double-clicked rbx.exe
+# from opening a terminal it does not need.
+$deps = @("-m", "pip", "install", "--quiet", "--upgrade", "pip", "pyinstaller>=6.0")
 if ((Invoke-Native $PyExe $deps) -ne 0) { throw "Could not install build dependencies." }
 
 # --- version resource -----------------------------------------------------
@@ -79,8 +82,13 @@ $v = $Version.Split(".")
 while ($v.Count -lt 4) { $v += "0" }
 $vTuple = ($v[0..3]) -join ", "
 
-$verFile = Join-Path $env:TEMP "rebrandx-version.txt"
-@"
+# Each binary gets its own resource: Explorer shows OriginalFilename in the
+# Details tab, and stamping both of them "RebrandX.exe" makes rbx.exe look
+# like a copy of something else.
+function New-VersionFile {
+    param([string]$FileName, [string]$Description)
+    $path = Join-Path $env:TEMP ("rebrandx-version-{0}.txt" -f $FileName)
+    @"
 VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=($vTuple), prodvers=($vTuple),
@@ -91,10 +99,10 @@ VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'RebrandX'),
-        StringStruct('FileDescription', 'Rename a project across its files, names and contents'),
+        StringStruct('FileDescription', '$Description'),
         StringStruct('FileVersion', '$Version'),
         StringStruct('InternalName', 'RebrandX'),
-        StringStruct('OriginalFilename', 'RebrandX.exe'),
+        StringStruct('OriginalFilename', '$FileName'),
         StringStruct('ProductName', 'RebrandX'),
         StringStruct('ProductVersion', '$Version')
       ])
@@ -102,7 +110,12 @@ VSVersionInfo(
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
 )
-"@ | Set-Content -Path $verFile -Encoding ASCII
+"@ | Set-Content -Path $path -Encoding ASCII
+    return $path
+}
+
+$verGui = New-VersionFile "RebrandX.exe" "Rename a project across its files, names and contents"
+$verCli = New-VersionFile "rbx.exe" "RebrandX on the command line"
 
 # --- application manifest -------------------------------------------------
 # longPathAware lets the frozen build open paths past 260 characters even on
@@ -153,7 +166,11 @@ if (Test-Path $icon) {
 # theme to bundle.
 $common = @(
     "--onefile", "--noconfirm", "--clean",
-    "--version-file", $verFile,
+    # Each platform builds into its own half of dist\ and build\, so a Linux
+    # .deb and a Windows .exe can sit side by side. The generated .spec files
+    # are swept up at the end -- --specpath would move them, but it also
+    # re-roots every relative --add-data path against wherever they land.
+    "--distpath", "dist\windows", "--workpath", "build\windows",
     "--manifest", $manifest,
     "--add-data", "share\rebrandx.ico;share",
     "--add-data", "share\rebrandx.png;share"
@@ -168,22 +185,32 @@ if (-not $CliOnly) {
     if (Test-Path "share\rebrandx-splash.png") {
         $splashArg = @("--splash", "share\rebrandx-splash.png")
     }
-    $guiArgs = @("-m", "PyInstaller", "--name", "RebrandX", "--windowed"
-                 ) + $splashArg + $common + @("rebrandx\app_tk.py")
+    $guiArgs = @("-m", "PyInstaller", "--name", "RebrandX", "--windowed",
+                 "--version-file", $verGui) + $splashArg + $common + @("rebrandx\app_tk.py")
     if ((Invoke-Native $PyExe $guiArgs) -ne 0) { throw "PyInstaller failed building RebrandX.exe" }
 }
 
-Write-Host "  building rbx.exe (command line)..."
-# --console, and no Tk at all: the CLI is pure stdlib and has no business
-# carrying a GUI toolkit around with it.
+Write-Host "  building rbx.exe (command line and window)..."
+# rbx.exe carries tkinter too. `rbx` with no arguments opens the app -- that
+# is documented, and it is what a double-click does -- so leaving the toolkit
+# out to save four megabytes bought a binary that crashed on its most likely
+# first use.
+#
+# It stays a console binary, because that is what makes `rbx Old New .`
+# behave in a shell: the prompt waits for it, output lands in order, and the
+# confirmation can be answered. Windows hands a console-subsystem .exe a
+# terminal of its own when it is double-clicked, and --hide-console puts that
+# window away in the bootloader, before Python starts -- so the app comes up
+# on its own rather than in front of a black rectangle.
 $cliArgs = @("-m", "PyInstaller", "--name", "rbx", "--console",
-             "--exclude-module", "tkinter") + $common + @("rebrandx\cli.py")
+             "--hide-console", "hide-early",
+             "--version-file", $verCli) + $common + @("rebrandx\cli.py")
 if ((Invoke-Native $PyExe $cliArgs) -ne 0) { throw "PyInstaller failed building rbx.exe" }
 
 # --- verify ---------------------------------------------------------------
 $built = @()
-if (-not $CliOnly) { $built += "dist\RebrandX.exe" }
-$built += "dist\rbx.exe"
+if (-not $CliOnly) { $built += "dist\windows\RebrandX.exe" }
+$built += "dist\windows\rbx.exe"
 foreach ($exe in $built) {
     if (-not (Test-Path $exe)) { throw "$exe was not produced" }
     $size = (Get-Item $exe).Length
@@ -191,25 +218,32 @@ foreach ($exe in $built) {
     Write-Host ("  {0}  {1:N1} MB" -f $exe, ($size / 1MB)) -ForegroundColor Green
 }
 
-# rbx.exe is self-contained, so it can prove itself right here.
+# rbx.exe is self-contained, so it can prove itself right here. --self-test
+# reports what the binary is made of and fails if the toolkit, the window or
+# the engine did not make it in -- which is how a build that only ever ran
+# `--help` shipped a CLI that crashed the moment somebody double-clicked it.
 Write-Host "  smoke test..."
-if ((Invoke-Native "dist\rbx.exe" @("--help")) -ne 0) { throw "rbx.exe --help failed" }
+if ((Invoke-Native "dist\windows\rbx.exe" @("--help")) -ne 0) { throw "rbx.exe --help failed" }
+if ((Invoke-Native "dist\windows\rbx.exe" @("--self-test")) -ne 0) { throw "rbx.exe --self-test failed" }
 
 # --- portable archive -----------------------------------------------------
 if (-not $NoZip) {
-    $zip = "dist\RebrandX-windows.zip"
+    $zip = "dist\windows\RebrandX-windows.zip"
     Remove-Item $zip -ErrorAction SilentlyContinue
     Compress-Archive -Path $built -DestinationPath $zip
     Write-Host ("  {0}  {1:N1} MB" -f $zip, ((Get-Item $zip).Length / 1MB)) -ForegroundColor Green
 }
 
-Remove-Item $verFile, $manifest -ErrorAction SilentlyContinue
+Remove-Item $verGui, $verCli, $manifest -ErrorAction SilentlyContinue
+Remove-Item "RebrandX.spec", "rbx.spec" -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host ""
 Write-Host "  RebrandX.exe  double-click it, or put it anywhere on your PATH"
 Write-Host "  rbx.exe       rbx OldName NewName C:\path\to\folder"
+Write-Host "                double-click it, or run it with no arguments, and"
+Write-Host "                it opens the same window -- no terminal in sight"
 Write-Host ""
-Write-Host "  To wire the source checkout into the Start menu and Explorer instead:"
-Write-Host "    powershell -ExecutionPolicy Bypass -File install.ps1"
+Write-Host "  Portable: keep the file wherever suits you, delete it when done."
+Write-Host "  Nothing was registered, and there is nothing to uninstall."

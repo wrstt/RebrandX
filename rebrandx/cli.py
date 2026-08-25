@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -91,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--revert", action="store_true",
                    help="undo the last in-place rebrand of PATH from its .rebrandx-backup")
     p.add_argument("--gui", action="store_true", help="open the RebrandX window")
+    p.add_argument("--self-test", action="store_true", dest="self_test",
+                   help="check this build has everything it needs, then exit")
     return p
 
 
@@ -149,20 +152,105 @@ def preview(path: str, opts: Options, c, verbose: bool, g=GLYPHS):
     return res
 
 
+def report(text: str) -> None:
+    """Say something that went wrong, wherever this build can be read from.
+
+    Normally stderr. A double-clicked build has no console anybody can see
+    -- Windows opened one and it was hidden on the way in, because the
+    point of a double-click is the window, not a terminal -- so there it
+    goes in a message box instead of nowhere.
+    """
+    if (win.hidden_console() or sys.stderr is None) and win.error_dialog("RebrandX", text):
+        return
+    if sys.stderr is not None:
+        print(text, file=sys.stderr)
+
+
+def _self_test(c, g) -> int:
+    """Report what this build is, and prove the parts of it work.
+
+    A frozen .exe is opaque from the outside: `rbx --help` succeeding says
+    nothing about whether the window can still open, and the way that fails
+    is a traceback in front of somebody who double-clicked it. So the build
+    checks itself -- the build script and CI both run this against the
+    freshly built rbx.exe.
+    """
+    ok = True
+    rows = [("python", "%d.%d.%d" % sys.version_info[:3]),
+            ("build", "frozen, self-contained" if getattr(sys, "frozen", False)
+                      else "source checkout"),
+            ("console", "ours alone" if win.owns_console()
+                        else "shared with a shell" if sys.stdout and sys.stdout.isatty()
+                        else "none")]
+
+    try:
+        import tkinter
+        rows.append(("tkinter", "Tk %s" % tkinter.TkVersion))
+    except ImportError as exc:
+        ok = False
+        rows.append(("tkinter", "missing -- %s" % exc))
+
+    try:
+        from rebrandx import app_tk  # noqa: F401
+        rows.append(("window", "ready"))
+    except Exception as exc:                                # noqa: BLE001
+        ok = False
+        rows.append(("window", "%s: %s" % (type(exc).__name__, exc)))
+
+    # The engine, end to end, on a project small enough to build here.
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "taskly"
+            (src / "src").mkdir(parents=True)
+            (src / "src" / "taskly.txt").write_text("taskly\n", encoding="utf-8")
+            res = engine.scan(str(src), Options(find="Taskly", replace="Flowdesk"))
+            if res.error or res.replacements < 1 or res.renames < 1:
+                raise ValueError(res.error or "nothing found in the fixture")
+        rows.append(("engine", "%d replacement, %d rename on a test project"
+                     % (res.replacements, res.renames)))
+    except Exception as exc:                                # noqa: BLE001
+        ok = False
+        rows.append(("engine", "%s: %s" % (type(exc).__name__, exc)))
+
+    print("%srbx self-test%s" % (c["bold"], c["off"]))
+    for name, value in rows:
+        print("  %-9s %s" % (name, value))
+    print("%s%s%s %s" % (c["grn"] if ok else c["red"],
+                         g["tick"] if ok else g["warn"], c["off"],
+                         "everything this build needs is here" if ok
+                         else "this build is incomplete"))
+    return 0 if ok else 1
+
+
 def _open_window(args) -> int:
     """Open the desktop window.
 
     Windows gets the native tkinter app -- it needs nothing installed. On
     Linux the GTK shell is preferred where its bindings are present, and
     the same native window is the fallback when they are not.
+
+    Double-clicking rbx.exe lands here, and a console-subsystem binary is
+    handed a terminal by Windows on the way in whether it wants one or not.
+    It is ours alone in that case, so it goes away before the window opens
+    -- an app should not come up with a black rectangle behind it.
     """
     if os.name != "nt":
         try:
-            from rebrandx.app import main as gtk_main
+            from rebrandx.app_gtk import main as gtk_main
             return gtk_main(args)
         except (ImportError, ValueError):
             pass
-    from rebrandx.app_tk import main as tk_main
+    win.hide_console()
+    try:
+        from rebrandx.app_tk import main as tk_main
+    except ImportError as exc:
+        # A frozen build always carries tkinter. Running from source on a
+        # Linux distribution that packages it separately does not.
+        report("The RebrandX window needs tkinter, which this Python does "
+               "not have (%s).\n\nInstall it (Debian/Ubuntu: sudo apt "
+               "install python3-tk), or use the command line:\n\n"
+               "    rbx OldName NewName PATH" % exc)
+        return 1
     return tk_main(args)
 
 
@@ -182,6 +270,9 @@ def main(argv=None) -> int:
     c = paint(tty and not a.no_color)
     g = glyphs()
 
+    if a.self_test:
+        return _self_test(c, g)
+
     if a.revert:
         rc = 0
         for raw in ([a.find] if a.find else []) + ([a.replace] if a.replace else []) + a.paths:
@@ -199,11 +290,25 @@ def main(argv=None) -> int:
                 rc = 1
         return rc
 
-    if a.gui or (not a.find and not a.replace and not a.paths):
-        args = [sys.argv[0]] + ([a.paths[0]] if a.paths else [])
-        return _open_window(args)
+    # One argument, and it is a folder: that is a drag-and-drop onto the
+    # .exe, or `rbx .` typed hopefully. Explorer hands the dropped path
+    # straight to the program, and nobody means "find C:\dev\taskly" by it.
+    dropped = bool(a.find and not a.replace and not a.paths
+                   and os.path.isdir(os.path.expanduser(a.find)))
+    if a.gui or dropped or not (a.find or a.replace or a.paths):
+        folder = a.paths[0] if a.paths else (a.find if dropped else None)
+        return _open_window([sys.argv[0]] + ([folder] if folder else []))
 
     if not a.find or not a.replace or not a.paths:
+        # Printing usage to a console the user cannot see is the same as
+        # saying nothing -- which is what dropping a *file* on rbx.exe,
+        # rather than a folder, used to do.
+        if win.hidden_console():
+            report("RebrandX did not know what to do with:\n\n    %s\n\n"
+                   "Drop a folder on rbx.exe to open it in the app, or run\n\n"
+                   "    rbx OldName NewName PATH\n\nfrom a terminal."
+                   % "  ".join(argv))
+            return 2
         build_parser().print_usage(sys.stderr)
         print("rbx: need FIND, REPLACE and at least one PATH "
               "(or run `rbx` with no arguments for the app)", file=sys.stderr)
@@ -261,5 +366,27 @@ def main(argv=None) -> int:
     return 0
 
 
+def run() -> int:
+    """main(), with somewhere to put a crash.
+
+    In a shell this changes nothing: the traceback goes to stderr, exactly
+    as it always did. A double-clicked build is the case worth handling --
+    its console is hidden, so the traceback would land where nobody can
+    read it and the process would exit looking like it had simply declined
+    to start.
+    """
+    try:
+        return main()
+    except KeyboardInterrupt:
+        return 130
+    except Exception:                                       # noqa: BLE001
+        if not (win.hidden_console() or sys.stderr is None):
+            raise
+        import traceback
+        report("RebrandX hit an error it could not recover from.\n\n"
+               + traceback.format_exc())
+        return 1
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run())

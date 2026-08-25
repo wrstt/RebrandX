@@ -25,5 +25,5 @@ if not defined RBX_PY (
     exit /b 9009
 )
 
-%RBX_PY% "%HERE%..\rebrandx\app_tk.py" %*
+%RBX_PY% "%HERE%..\..\rebrandx\app_tk.py" %*
 exit /b %ERRORLEVEL%

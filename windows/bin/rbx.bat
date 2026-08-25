@@ -19,5 +19,5 @@ if not defined RBX_PY (
     exit /b 9009
 )
 
-%RBX_PY% "%HERE%..\rebrandx\cli.py" %*
+%RBX_PY% "%HERE%..\..\rebrandx\cli.py" %*
 exit /b %ERRORLEVEL%

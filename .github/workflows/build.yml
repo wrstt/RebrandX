@@ -61,61 +61,6 @@ jobs:
           python rebrandx/cli.py --help > /dev/null
           python rebrandx/cli.py Taskly Flowdesk demo -n -v
 
-  windows-exe:
-    name: RebrandX.exe
-    needs: test
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Build
-        run: powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
-
-      - name: Check the frozen CLI actually runs
-        shell: cmd
-        run: |
-          dist\rbx.exe --help > nul || exit /b 1
-          mkdir frozen\src
-          echo taskly> frozen\src\taskly.txt
-          dist\rbx.exe Taskly Flowdesk frozen -y || exit /b 1
-          if not exist frozen\src\flowdesk.txt exit /b 1
-          echo frozen CLI rebranded the fixture correctly
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RebrandX-windows
-          path: |
-            dist/RebrandX.exe
-            dist/rbx.exe
-            dist/RebrandX-windows.zip
-          if-no-files-found: error
-
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/RebrandX.exe
-            dist/rbx.exe
-            dist/RebrandX-windows.zip
-
-  windows-install:
-    name: install.ps1
-    needs: test
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      # -DryRun first: it must report every step without touching anything.
-      - name: Installer dry run
-        run: powershell -ExecutionPolicy Bypass -File install.ps1 -DryRun
-
       # The whole point of the native window: nothing to install. Asserted
       # by importing the app and checking what it actually pulled in --
       # the runner image ships pipx and friends, so an empty `pip freeze`
@@ -140,30 +85,77 @@ jobs:
           print("stdlib only: %d modules, no third-party imports"
                 % len(sys.modules))
 
-      - name: Install for real
-        run: powershell -ExecutionPolicy Bypass -File install.ps1 -NoDesktopIcon
+  windows-exe:
+    name: RebrandX.exe
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: The installed command works
+      - name: Build
+        run: powershell -ExecutionPolicy Bypass -File windows\build.ps1
+
+      - name: Check the frozen CLI actually runs
         shell: cmd
         run: |
-          mkdir installed\src
-          echo taskly> installed\src\taskly.txt
-          "%LOCALAPPDATA%\RebrandX\bin\rbx.cmd" Taskly Flowdesk installed -y || exit /b 1
-          if not exist installed\src\flowdesk.txt exit /b 1
-          echo installed rbx rebranded the fixture correctly
+          dist\windows\rbx.exe --help > nul || exit /b 1
+          mkdir frozen\src
+          echo taskly> frozen\src\taskly.txt
+          dist\windows\rbx.exe Taskly Flowdesk frozen -y || exit /b 1
+          if not exist frozen\src\flowdesk.txt exit /b 1
+          echo frozen CLI rebranded the fixture correctly
 
-      - name: Uninstall
-        run: powershell -ExecutionPolicy Bypass -File uninstall.ps1 -RemoveSettings
+      # `rbx` with no arguments opens the window, and a double-click is that
+      # same route -- so the binary has to carry tkinter and the app, not
+      # just the engine. --self-test asks it, rather than finding out in
+      # front of whoever downloaded the release.
+      - name: The frozen build can still open the window
+        shell: cmd
+        run: |
+          dist\windows\rbx.exe --self-test || exit /b 1
 
-      - name: Uninstall left nothing behind
+      # Portable means portable: copy the .exe somewhere else entirely, run
+      # it from there, and check it left nothing on the machine behind it.
+      # There is no installer, so nothing may quietly install itself either.
+      - name: The .exe is portable
         shell: pwsh
         run: |
-          $bad = @()
-          if (Test-Path "$env:LOCALAPPDATA\RebrandX\bin\rbx.cmd") { $bad += "rbx.cmd" }
-          if (Test-Path "HKCU:\Software\Classes\Directory\shell\RebrandX") { $bad += "context menu" }
-          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\RebrandX.lnk") { $bad += "start menu" }
-          if ($bad.Count) { throw "uninstall left: $($bad -join ', ')" }
-          Write-Host "clean"
+          $away = Join-Path $env:TEMP "elsewhere\tools"
+          $demo = Join-Path $env:TEMP "elsewhere\demo"
+          New-Item -ItemType Directory -Force $away, "$demo\src" | Out-Null
+          Copy-Item dist\windows\rbx.exe $away
+          Set-Content "$demo\src\taskly.txt" "taskly"
+          & "$away\rbx.exe" Taskly Flowdesk $demo -y
+          if ($LASTEXITCODE -ne 0) { throw "the copied .exe failed to run" }
+          if (-not (Test-Path "$demo\src\flowdesk.txt")) { throw "it did not rebrand the fixture" }
+          foreach ($key in @("HKCU:\Software\Classes\Directory\shell\RebrandX",
+                             "HKCU:\Software\Classes\Directory\Background\shell\RebrandX",
+                             "HKCU:\Software\RebrandX")) {
+            if (Test-Path $key) { throw "the .exe registered $key -- it is meant to be portable" }
+          }
+          if (Test-Path "$env:LOCALAPPDATA\RebrandX") { throw "the .exe installed itself into LOCALAPPDATA" }
+          Write-Host "ran from $away and left the machine alone"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RebrandX-windows
+          path: |
+            dist/windows/RebrandX.exe
+            dist/windows/rbx.exe
+            dist/windows/RebrandX-windows.zip
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/windows/RebrandX.exe
+            dist/windows/rbx.exe
+            dist/windows/RebrandX-windows.zip
 
   deb:
     name: rebrandx.deb
@@ -172,9 +164,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build package
-        run: ./packaging/build-deb.sh
+        run: ./linux/build-deb.sh
       - uses: actions/upload-artifact@v4
         with:
           name: RebrandX-deb
-          path: dist/*.deb
+          path: dist/linux/*.deb
           if-no-files-found: error

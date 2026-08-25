@@ -15,7 +15,7 @@ from rebrandx import engine, win
 from rebrandx.engine import Options, ApplyError  # noqa: F401  (re-exported)
 
 APP_ID = "dev.rebrandx.RebrandX"
-UI_DIR = Path(__file__).resolve().parent / "ui"
+UI_DIR = Path(__file__).resolve().parent / "ui_gtk"
 
 DEFAULT_CONFIG = {
     "recents": [],

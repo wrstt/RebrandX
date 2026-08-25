@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate share/rebrandx.ico (and the PNG) from one master rendering.
 
-    python packaging/make-icon.py
+    python tools/make-icon.py
 
 Why this exists: Windows picks the closest size in an .ico and scales it to
 whatever the shell asked for. A file that jumps 32 -> 48 has nothing to

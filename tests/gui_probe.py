@@ -24,7 +24,7 @@ except (ImportError, ValueError) as exc:
     sys.exit("gui_probe needs the GTK bindings (%s).\n\n"
              "    sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1\n" % exc)
 
-from rebrandx.app import RebrandXWindow
+from rebrandx.app_gtk import RebrandXWindow
 
 TMP = Path(tempfile.mkdtemp(prefix="rbx-gui-"))
 def fixture():

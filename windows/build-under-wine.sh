@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build RebrandX.exe from Linux, using Windows Python under Wine.
 #
-#   ./packaging/build-windows-wine.sh
+#   ./windows/build-under-wine.sh
 #
 # PyInstaller cannot cross-compile, but it runs perfectly well inside Wine
 # against a Windows Python, and the .exe it produces is a genuine PE binary.
@@ -45,16 +45,17 @@ echo "Building…"
 cd "$HERE"
 wine "$WINPY" -m PyInstaller \
   --name RebrandX --onefile --windowed --noconfirm --clean \
+  --distpath 'dist\windows' --workpath 'build\windows' \
   --icon 'share\rebrandx.ico' \
   --add-data 'share\rebrandx.ico;share' \
   --add-data 'share\rebrandx.png;share' \
   'rebrandx\app_tk.py'
 
-if [ -f dist/RebrandX.exe ]; then
+if [ -f dist/windows/RebrandX.exe ]; then
   echo
-  echo "Built dist/RebrandX.exe ($(du -h dist/RebrandX.exe | cut -f1))"
-  file dist/RebrandX.exe
+  echo "Built dist/windows/RebrandX.exe ($(du -h dist/windows/RebrandX.exe | cut -f1))"
+  file dist/windows/RebrandX.exe
 else
-  echo "Build did not produce dist/RebrandX.exe" >&2
+  echo "Build did not produce dist/windows/RebrandX.exe" >&2
   exit 1
 fi

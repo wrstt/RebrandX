@@ -313,6 +313,51 @@ def main() -> int:                                          # noqa: C901
               win.encodable("✓", _FakeStream("utf-8")), True)
         check("cp1252 stream refuses an arrow",
               win.encodable("→", _FakeStream("cp1252")), False)
+        check("console ownership is a bool", isinstance(win.owns_console(), bool), True)
+        check("hidden console is a bool", isinstance(win.hidden_console(), bool), True)
+        if not win.owns_console():
+            # The console a test run is sitting in belongs to the shell.
+            # Hiding that would take the shell's window away with it.
+            check("a shell's console is never hidden", win.hide_console(), False)
+        else:
+            skip("a shell's console is never hidden", "this run owns its console")
+        if not IS_WIN:
+            check("console helpers are inert off Windows",
+                  (win.owns_console(), win.hide_console(), win.hidden_console(),
+                   win.error_dialog("x", "y")),
+                  (False, False, False, False))
+
+        # ------------------------------------------------------------------
+        section("`rbx` with no arguments opens the window")
+        # The regression this guards: the frozen CLI was built with tkinter
+        # excluded, so the documented `rbx` -> app route -- which is also
+        # what a double-click does -- died with ModuleNotFoundError in front
+        # of a terminal the user never asked to see.
+        import rebrandx.cli as cli
+        opened = []
+        original = cli._open_window
+        cli._open_window = lambda args: (opened.append(list(args)), 0)[1]
+        try:
+            check("bare `rbx` routes to the window", cli.main([]), 0)
+            check("...and opened it", len(opened), 1)
+            proj = tmp / "dropped"
+            proj.mkdir()
+            cli.main([str(proj)])
+            check("a folder dropped on rbx is handed to the window",
+                  opened[-1][-1], str(proj))
+        finally:
+            cli._open_window = original
+
+        # The same question asked of the build itself, the way CI asks it of
+        # dist\rbx.exe: is every piece that route needs actually present?
+        proc = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parent.parent
+                                 / "rebrandx" / "cli.py"), "--self-test"],
+            capture_output=True, text=True)
+        check("--self-test passes", proc.returncode, 0)
+        check("--self-test finds the window",
+              any(ln.split()[:2] == ["window", "ready"]
+                  for ln in proc.stdout.splitlines() if ln.strip()), True)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

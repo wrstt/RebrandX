@@ -466,6 +466,138 @@ def use_utf8(*streams) -> None:
             pass
 
 
+def _console_window():
+    """The HWND of our console window, or 0 when there is not one."""
+    if not IS_WINDOWS:
+        return 0
+    try:
+        import ctypes
+        from ctypes import wintypes
+        fn = ctypes.windll.kernel32.GetConsoleWindow
+        fn.restype = wintypes.HWND          # a handle, not an int: on 64-bit
+        fn.argtypes = []                    # the default c_int truncates it
+        return fn() or 0
+    except Exception:
+        return 0
+
+
+def _image_name(pid: int) -> str:
+    """The file name of the process with this pid, lowercased. "" if unknown."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ""
+        try:
+            size = wintypes.DWORD(MAX_PATH)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if not k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return ""
+            return os.path.basename(buf.value).lower()
+        finally:
+            k32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+
+def owns_console() -> bool:
+    """Whether the console we are attached to exists only for us.
+
+    True for a console .exe double-clicked in Explorer: Windows made that
+    window on our behalf and it dies with us. False when it was launched
+    from cmd or PowerShell, where the console belongs to the shell and only
+    happens to be lent to us, and false when there is no console at all.
+
+    GetConsoleProcessList reports every process attached to the console. A
+    count of one is the simple case; a one-file frozen build is two, because
+    the bootloader stays alive while the real program runs as its child --
+    so the question is not how many are attached but whether any of them is
+    somebody else's program.
+    """
+    hwnd = _console_window()
+    if not hwnd:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        buf = (wintypes.DWORD * 16)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(buf, len(buf))
+        if count < 1 or count > len(buf):
+            return False
+        ours = os.path.basename(sys.executable).lower()
+        return all(_image_name(pid) == ours for pid in buf[:count])
+    except Exception:
+        return False
+
+
+def hide_console() -> bool:
+    """Put away a console window this process owns. True if one was hidden.
+
+    Double-clicking a console-subsystem .exe opens a terminal whether the
+    program wants one or not, so `rbx` with no arguments -- which opens the
+    app -- came up with a black window sitting behind it. A console shared
+    with a shell is never touched: that one is not ours to hide.
+
+    The frozen build also hides it from the bootloader (--hide-console
+    hide-early), which is earlier than any Python code can run; this covers
+    a source run and is harmless when the window is already gone.
+    """
+    hwnd = _console_window()
+    if not hwnd or not owns_console():
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.ShowWindow(hwnd, 0))  # SW_HIDE
+    except Exception:
+        return False
+
+
+def hidden_console() -> bool:
+    """Whether our only console is one the user cannot see.
+
+    True in exactly the case that matters: a double-clicked build, whose
+    own console was hidden on the way in. Printing an error there is the
+    same as not reporting it -- the process exits and it looks like the
+    program declined to start for no reason.
+
+    A console shared with a shell is never "hidden" here even if its window
+    happens to be invisible, which is how a CI runner or a service looks
+    from the inside. Guessing wrong in that direction would put a modal
+    dialog in front of a machine with nobody at it.
+    """
+    hwnd = _console_window()
+    if not hwnd or not owns_console():
+        return False
+    try:
+        import ctypes
+        return not ctypes.windll.user32.IsWindowVisible(hwnd)
+    except Exception:
+        return False
+
+
+def error_dialog(title: str, text: str) -> bool:
+    """Report something in a message box. True if one was shown.
+
+    The last resort for a process with nowhere to print: a windowed build,
+    or a console one that was double-clicked and had its terminal hidden.
+    """
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+        MB_ICONERROR, MB_SETFOREGROUND, MB_TOPMOST = 0x10, 0x10000, 0x40000
+        ctypes.windll.user32.MessageBoxW(
+            0, text, title, MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST)
+        return True
+    except Exception:
+        return False
+
+
 def open_folder(path) -> bool:
     """Reveal a folder in Explorer / the desktop's file manager."""
     p = os.path.expanduser(str(path))

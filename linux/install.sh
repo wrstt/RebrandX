@@ -4,6 +4,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The Linux scripts live in linux/; the app itself is one level up.
+ROOT="$(cd "$HERE/.." && pwd)"
 APPS="$HOME/.local/share/applications"
 ICONS="$HOME/.local/share/icons/hicolor/scalable/apps"
 BIN="$HOME/.local/bin"
@@ -11,7 +13,7 @@ NAUT="$HOME/.local/share/nautilus/scripts"
 
 say() { printf '  %s\n' "$*"; }
 
-echo "Installing RebrandX from $HERE"
+echo "Installing RebrandX from $ROOT"
 
 # --- dependency check -------------------------------------------------------
 if ! /usr/bin/python3 -c "
@@ -30,7 +32,7 @@ say "dependencies OK (python3-gi + WebKit2 4.1)"
 
 # --- icon -------------------------------------------------------------------
 mkdir -p "$ICONS"
-cp "$HERE/share/rebrandx.svg" "$ICONS/rebrandx.svg"
+cp "$ROOT/share/rebrandx.svg" "$ICONS/rebrandx.svg"
 say "icon      -> $ICONS/rebrandx.svg"
 
 # --- launcher on PATH -------------------------------------------------------

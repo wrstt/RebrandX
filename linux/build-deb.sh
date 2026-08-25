@@ -1,17 +1,17 @@
 #!/bin/bash
 # Build rebrandx_<version>_all.deb — a normal Ubuntu package.
-#   ./packaging/build-deb.sh    then:   sudo apt install ./dist/rebrandx_1.1.0_all.deb
+#   ./linux/build-deb.sh    then:   sudo apt install ./dist/linux/rebrandx_1.1.0_all.deb
 set -euo pipefail
 
 VERSION="1.1.0"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$HERE/build/deb"
-DIST="$HERE/dist"
+DIST="$HERE/dist/linux"
 PKG="rebrandx_${VERSION}_all"
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD/DEBIAN" \
-         "$BUILD/usr/lib/rebrandx/rebrandx/ui" \
+         "$BUILD/usr/lib/rebrandx/rebrandx/ui_gtk" \
          "$BUILD/usr/bin" \
          "$BUILD/usr/share/applications" \
          "$BUILD/usr/share/icons/hicolor/scalable/apps" \
@@ -20,13 +20,13 @@ mkdir -p "$BUILD/DEBIAN" \
 
 # --- payload ---------------------------------------------------------------
 install -m644 "$HERE/rebrandx/"*.py            "$BUILD/usr/lib/rebrandx/rebrandx/"
-install -m644 "$HERE/rebrandx/ui/"*            "$BUILD/usr/lib/rebrandx/rebrandx/ui/"
+install -m644 "$HERE/rebrandx/ui_gtk/"*        "$BUILD/usr/lib/rebrandx/rebrandx/ui_gtk/"
 install -m644 "$HERE/share/rebrandx.svg"       "$BUILD/usr/share/icons/hicolor/scalable/apps/rebrandx.svg"
 install -m644 "$HERE/README.md"                "$BUILD/usr/share/doc/rebrandx/README.md"
 
 cat > "$BUILD/usr/bin/rebrandx" <<'EOF'
 #!/bin/sh
-exec /usr/bin/python3 /usr/lib/rebrandx/rebrandx/app.py "$@"
+exec /usr/bin/python3 /usr/lib/rebrandx/rebrandx/app_gtk.py "$@"
 EOF
 cat > "$BUILD/usr/bin/rbx" <<'EOF'
 #!/bin/sh
