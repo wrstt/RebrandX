@@ -152,6 +152,44 @@ def make_writable(path) -> bool:
         return False
 
 
+def ensure_writable(path):
+    """Make `path` writable for one write, returning the mode to put back.
+
+    Read-only means different things on the two platforms -- on Windows it
+    is an attribute git sets on every object it stores, on Linux it is a
+    deliberate permission -- but in both cases the user has explicitly
+    asked for this file to be rebranded, and it has already been backed up.
+    So the bit is lifted for the write and restored immediately after,
+    rather than being cleared for good.
+
+    Returns None when the file was already writable, or when the mode could
+    not be changed at all (not ours to change, most likely).
+    """
+    p = extended(path)
+    try:
+        mode = os.stat(p).st_mode
+    except OSError:
+        return None
+    if os.access(p, os.W_OK):
+        return None
+    want = stat.S_IWRITE if IS_WINDOWS else stat.S_IWUSR
+    try:
+        os.chmod(p, mode | want)
+        return mode
+    except OSError:
+        return None
+
+
+def restore_mode(path, mode) -> None:
+    """Put back a mode captured by ensure_writable()."""
+    if mode is None:
+        return
+    try:
+        os.chmod(extended(path), mode)
+    except OSError:
+        pass
+
+
 def _clear_readonly_and_retry(func, path, err, *, quiet: bool):
     """rmtree fallback: clear read-only and try the delete once more.
 

@@ -830,11 +830,14 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
             _mkdir(bpath.parent)
             shutil.copy2(win.extended(src), win.extended(bpath))
         tf = read_text(src, opts.max_file_bytes)
-        # A read-only file still belongs to the rebrand -- clear the bit
-        # rather than aborting the run over an attribute.
-        if win.IS_WINDOWS and not os.access(win.extended(src), os.W_OK):
-            win.make_writable(src)
-        write_text(src, content, tf)
+        # A read-only file still belongs to the rebrand, on either platform.
+        # Lift the bit for the write and put it straight back, so the run is
+        # not aborted over an attribute and the file keeps its permissions.
+        saved_mode = win.ensure_writable(src)
+        try:
+            write_text(src, content, tf)
+        finally:
+            win.restore_mode(src, saved_mode)
         manifest["rewritten"].append(rel)
         files += 1
 
