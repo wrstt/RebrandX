@@ -66,6 +66,9 @@ jobs:
       # the runner image ships pipx and friends, so an empty `pip freeze`
       # was never the right question.
       - name: The app imports using only the standard library
+        # sys.stdlib_module_names arrived in 3.10, and the answer does not
+        # vary by interpreter version anyway -- asking once per OS is enough.
+        if: matrix.python == '3.12'
         shell: python
         run: |
           import sys
