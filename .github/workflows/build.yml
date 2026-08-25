@@ -92,6 +92,10 @@ jobs:
     name: RebrandX.exe
     needs: test
     runs-on: windows-latest
+    # The release steps below create the release and upload to it, which
+    # the repo-default read-only token cannot do.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -164,6 +168,8 @@ jobs:
     name: rebrandx.deb
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Build package
