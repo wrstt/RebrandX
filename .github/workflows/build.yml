@@ -9,19 +9,57 @@ on:
 
 jobs:
   test:
-    name: tests (${{ matrix.os }})
+    name: tests (${{ matrix.os }}, py${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.12']
+        include:
+          # An older Windows image too, so the Win32 calls in win.py are
+          # exercised somewhere other than the newest build of Windows.
+          - os: windows-2022
+            python: '3.12'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
+
       - name: Engine tests
         run: python tests/test_engine.py
+
+      - name: Windows behaviour tests
+        # The window is built for real in here, so the runner needs a
+        # display. Windows runners have one; the Linux ones need Xvfb.
+        run: python tests/test_windows.py
+        if: runner.os == 'Windows'
+
+      - name: Windows behaviour tests (Linux, headless)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python tests/test_windows.py
+
+      # The CLI has to survive being redirected into a file on a machine
+      # whose console codepage is not UTF-8 -- that used to raise
+      # UnicodeEncodeError and take the whole run with it.
+      - name: CLI on a legacy codepage (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          set PYTHONIOENCODING=cp1252
+          python rebrandx\cli.py --help > cli-help.log 2>&1 || exit /b 1
+          mkdir demo\src
+          echo taskly> demo\src\taskly.txt
+          python rebrandx\cli.py Taskly Flowdesk demo -n -v > cli-dry.log 2>&1 || exit /b 1
+          type cli-dry.log
+
+      - name: CLI smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p demo/src && echo taskly > demo/src/taskly.txt
+          python rebrandx/cli.py --help > /dev/null
+          python rebrandx/cli.py Taskly Flowdesk demo -n -v
 
   windows-exe:
     name: RebrandX.exe
@@ -33,37 +71,83 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip pyinstaller pywebview
-
       - name: Build
-        run: |
-          python -m PyInstaller `
-            --name RebrandX --onefile --windowed --noconfirm --clean `
-            --icon share\rebrandx.ico `
-            --add-data "rebrandx\ui;rebrandx/ui" `
-            --hidden-import webview.platforms.edgechromium `
-            --collect-all webview `
-            rebrandx\app_win.py
+        run: powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
 
-      - name: Check it produced something runnable
+      - name: Check the frozen CLI actually runs
+        shell: cmd
         run: |
-          if (-not (Test-Path dist\RebrandX.exe)) { throw "RebrandX.exe was not produced" }
-          $size = (Get-Item dist\RebrandX.exe).Length
-          Write-Host "RebrandX.exe is $([math]::Round($size/1MB,1)) MB"
-          if ($size -lt 3MB) { throw "RebrandX.exe looks too small to be complete" }
+          dist\rbx.exe --help > nul || exit /b 1
+          mkdir frozen\src
+          echo taskly> frozen\src\taskly.txt
+          dist\rbx.exe Taskly Flowdesk frozen -y || exit /b 1
+          if not exist frozen\src\flowdesk.txt exit /b 1
+          echo frozen CLI rebranded the fixture correctly
 
       - uses: actions/upload-artifact@v4
         with:
           name: RebrandX-windows
-          path: dist/RebrandX.exe
+          path: |
+            dist/RebrandX.exe
+            dist/rbx.exe
+            dist/RebrandX-windows.zip
           if-no-files-found: error
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/RebrandX.exe
+          files: |
+            dist/RebrandX.exe
+            dist/rbx.exe
+            dist/RebrandX-windows.zip
+
+  windows-install:
+    name: install.ps1
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -DryRun first: it must report every step without touching anything.
+      - name: Installer dry run
+        run: powershell -ExecutionPolicy Bypass -File install.ps1 -DryRun
+
+      # The whole point of the native window: nothing to install.
+      - name: No third-party packages are needed
+        shell: pwsh
+        run: |
+          $out = python -m pip freeze
+          if ($out) { throw "expected a clean environment, got: $out" }
+          python -c "import rebrandx.app_tk; print('app imports with stdlib only')"
+
+      - name: Install for real
+        run: powershell -ExecutionPolicy Bypass -File install.ps1 -NoDesktopIcon
+
+      - name: The installed command works
+        shell: cmd
+        run: |
+          mkdir installed\src
+          echo taskly> installed\src\taskly.txt
+          "%LOCALAPPDATA%\RebrandX\bin\rbx.cmd" Taskly Flowdesk installed -y || exit /b 1
+          if not exist installed\src\flowdesk.txt exit /b 1
+          echo installed rbx rebranded the fixture correctly
+
+      - name: Uninstall
+        run: powershell -ExecutionPolicy Bypass -File uninstall.ps1 -RemoveSettings
+
+      - name: Uninstall left nothing behind
+        shell: pwsh
+        run: |
+          $bad = @()
+          if (Test-Path "$env:LOCALAPPDATA\RebrandX\bin\rbx.cmd") { $bad += "rbx.cmd" }
+          if (Test-Path "HKCU:\Software\Classes\Directory\shell\RebrandX") { $bad += "context menu" }
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\RebrandX.lnk") { $bad += "start menu" }
+          if ($bad.Count) { throw "uninstall left: $($bad -join ', ')" }
+          Write-Host "clean"
 
   deb:
     name: rebrandx.deb

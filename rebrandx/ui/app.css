@@ -194,6 +194,12 @@ button{cursor:pointer}
 .frow .nm.struck{text-decoration:line-through;text-decoration-color:rgba(164,68,58,.45)}
 .frow .newnm{font-family:var(--mono);font-size:10.5px;color:var(--brass);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
+/* A rename that would produce a name Windows refuses (CON.js, api:v2.py,
+   a trailing dot). Flagged on every platform, so a project rebranded on
+   Linux is not quietly made unopenable on Windows. */
+.frow .winwarn{flex:none;font-size:11px;color:var(--danger);line-height:1;cursor:help}
+.dhead .np.winwarn{color:var(--danger-dark);font-size:11.5px;
+  white-space:normal;overflow-wrap:anywhere}
 .badge{flex:none;font-family:var(--mono);font-size:10px;color:var(--accent-fg);background:var(--accent);
   border-radius:99px;padding:0 6px;line-height:16px;font-weight:700}
 .badge.done{background:var(--brass)}

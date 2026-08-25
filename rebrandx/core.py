@@ -1,7 +1,7 @@
 """Platform-independent half of the RebrandX app.
 
 Everything the UI asks for that isn't a window or a native dialog lives here,
-so the GTK shell (Linux) and the WebView2 shell (Windows) share one
+so the GTK shell (Linux) and the native tkinter window (Windows) share one
 implementation and one set of behaviours.
 """
 
@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from rebrandx import engine
+from rebrandx import engine, win
 from rebrandx.engine import Options, ApplyError  # noqa: F401  (re-exported)
 
 APP_ID = "dev.rebrandx.RebrandX"
@@ -37,7 +37,9 @@ def config_dir() -> Path:
 def load_config() -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     try:
-        disk = json.loads((config_dir() / "config.json").read_text())
+        # Explicit UTF-8: the locale default on Windows is cp1252, which
+        # cannot represent most people's actual folder names.
+        disk = json.loads((config_dir() / "config.json").read_text(encoding="utf-8"))
         for k, v in disk.items():
             if isinstance(v, dict) and isinstance(cfg.get(k), dict):
                 cfg[k].update(v)
@@ -49,23 +51,39 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
+    """Write the config atomically, so a crash cannot truncate it.
+
+    Windows will not rename onto an existing file, so the previous config
+    is removed first -- os.replace does both halves in one call and is the
+    only form that is atomic on both platforms.
+    """
     try:
         d = config_dir()
         d.mkdir(parents=True, exist_ok=True)
-        (d / "config.json").write_text(json.dumps(cfg, indent=2))
+        target = d / "config.json"
+        tmp = d / "config.json.tmp"
+        tmp.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        os.replace(tmp, target)
     except OSError:
         pass
 
 
 def tilde(p: str) -> str:
-    """Shorten a path for display: ~/dev/x on unix, %USERPROFILE% stays whole."""
+    r"""Shorten a path for display: ~/dev/x, or ~\dev\x on Windows.
+
+    The prefix test is case-insensitive on Windows, where the same folder
+    is spelled C:\Users\me by the shell and c:\users\me by plenty of other
+    tools. A case-sensitive startswith() would shorten one spelling and
+    not the other, so the recents list would show one folder twice.
+    """
     if not p:
         return ""
     home = str(Path.home())
-    if p.startswith(home):
-        return ("~" + p[len(home):]).replace("\\", "/") if os.name != "nt" \
-            else "~" + p[len(home):]
-    return p
+    if win.IS_WINDOWS:
+        if os.path.normcase(p).startswith(os.path.normcase(home)):
+            return "~" + p[len(home):]
+        return p
+    return "~" + p[len(home):] if p.startswith(home) else p
 
 
 class Core:
@@ -86,6 +104,11 @@ class Core:
             "settings": self.cfg["settings"],
             "home": str(Path.home()),
             "platform": "windows" if os.name == "nt" else "linux",
+            "sep": os.sep,
+            # RebrandX adds the \\?\ prefix itself, so a deep tree works
+            # either way; the UI only uses this to explain why a path in a
+            # warning looks unusual.
+            "longPaths": win.long_paths_enabled(),
             "defaults": {
                 "excludes": {".git/": True, "node_modules/": True, "*.lock": True},
                 "projectGlobs": dict(engine.PROJECT_FILE_GLOBS),
@@ -95,7 +118,12 @@ class Core:
     # -- recents -----------------------------------------------------------
     def remember(self, path: str) -> list[dict]:
         if path and os.path.isdir(path):
-            rec = [p for p in self.cfg["recents"] if p != path]
+            # Store one canonical spelling, and compare using the
+            # filesystem's own case rules -- otherwise picking the same
+            # folder from Explorer and from the CLI fills the recents
+            # list with duplicates that differ only in capitalisation.
+            path = os.path.normpath(os.path.abspath(path))
+            rec = [p for p in self.cfg["recents"] if not win.same_path(p, path)]
             rec.insert(0, path)
             self.cfg["recents"] = rec[:6]
             save_config(self.cfg)

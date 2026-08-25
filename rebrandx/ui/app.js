@@ -62,6 +62,7 @@ const S = {
   advOpen: false, pickerOpen: false, settingsOpen: false,
   settings: { confirmBeforeApply: true, showLineNumbers: true, backup: true, copyIgnored: false },
   busy: false, scanning: false, home: '',
+  platform: '', sep: '/',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -355,14 +356,19 @@ function renderFiles() {
     const pickable = !e.dir && !e.excluded && !drop;
     const badge = (e.count || 0) + (e.removed || 0);
     const newName = e.renamed ? e.newPath.split('/').pop() : '';
+    // The engine flags a rename that would produce a name Windows will not
+    // accept. On Windows it lands on a corrected name instead; everywhere
+    // else the file is written as asked but would not survive the trip.
+    const wtitle = e.winWarn ? `\n${newName} ${e.winWarn} on Windows` : '';
     frag.push(
       `<button class="frow${e.dir ? ' isdir' : ''}${sel ? ' sel' : ''}${dim ? ' dim' : ''}${drop ? ' drop' : ''}${pickable ? '' : ' nosel'}"
          data-path="${esc(e.path)}" data-pick="${pickable ? 1 : 0}"
          style="${e.depth ? 'margin-left:' + e.depth * 16 + 'px;' : ''}"
-         title="${esc(e.path)}${e.binary ? ' (binary — contents left alone)' : ''}${e.tooBig ? ' (too large to scan)' : ''}">
+         title="${esc(e.path)}${e.binary ? ' (binary — contents left alone)' : ''}${e.tooBig ? ' (too large to scan)' : ''}${esc(wtitle)}">
         <span class="ico">${e.dir ? '▸' : '·'}</span>
         <span class="nm${(e.renamed || drop) && !S.applied ? ' struck' : ''}">${esc(e.path.split('/').pop())}</span>
         ${e.renamed && !drop && !S.applied ? `<span class="newnm">→ ${esc(newName)}</span>` : ''}
+        ${e.winWarn && !drop && !S.applied ? `<span class="winwarn" title="${esc(newName)} ${esc(e.winWarn)} on Windows">⚠</span>` : ''}
         <span class="grow"></span>
         ${drop && !S.applied ? `<span class="badge del">delete</span>` : ''}
         ${badge && !drop ? `<span class="badge${S.applied ? ' done' : ''}">${badge}</span>` : ''}
@@ -478,9 +484,13 @@ function renderDiff() {
 
 function diffHeadHTML(d) {
   const n = (d.count || 0) + (d.removed || 0);
+  const entry = S.entries.find((e) => e.path === d.path);
+  const warn = entry && entry.winWarn;
   return `<div class="dhead">
     <div class="p">${esc(d.path)}</div>
     ${d.renamed && !S.applied ? `<div class="np">→ ${esc(d.newPath)}</div>` : ''}
+    ${warn && !S.applied ? `<div class="np winwarn">⚠ ${esc(warn)} on Windows${
+      S.platform === 'windows' ? ' — it will be adjusted' : ''}</div>` : ''}
     <span class="grow"></span>
     <div class="stat">${S.applied ? 'applied' : plural(n, 'change')}</div>
   </div>`;
@@ -742,6 +752,8 @@ async function toggleMax() {
 /* ------------------------------------------------------------------ boot */
 on('boot', (p) => {
   S.home = p.home;
+  S.platform = p.platform || '';
+  S.sep = p.sep || '/';
   S.recents = p.recents || [];
   S.settings = Object.assign(S.settings, p.settings || {});
   S.excludes = Object.assign({}, p.defaults.excludes);

@@ -6,12 +6,24 @@
 Checks computed styles and geometry, not just DOM attributes -- an element
 with the `hidden` attribute can still be visible if CSS overrides it.
 """
-import sys, tempfile, shutil
+import os, sys, tempfile, shutil
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import gi
-gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1")
-from gi.repository import Gtk, GLib, WebKit2
+
+if os.name == "nt":
+    sys.exit(
+        "gui_probe drives the GTK window, which exists only on Linux.\n"
+        "On Windows the window is native tkinter -- probe that one instead:\n\n"
+        "    python tests\\gui_probe_tk.py\n")
+
+try:
+    import gi
+    gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1")
+    from gi.repository import Gtk, GLib, WebKit2
+except (ImportError, ValueError) as exc:
+    sys.exit("gui_probe needs the GTK bindings (%s).\n\n"
+             "    sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1\n" % exc)
+
 from rebrandx.app import RebrandXWindow
 
 TMP = Path(tempfile.mkdtemp(prefix="rbx-gui-"))

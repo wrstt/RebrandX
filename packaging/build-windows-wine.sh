@@ -39,17 +39,16 @@ if [ ! -f "$WINPY" ]; then
 fi
 
 echo "Installing build dependencies into the prefix…"
-wine "$WINPY" -m pip install --quiet --upgrade pip pyinstaller pywebview
+wine "$WINPY" -m pip install --quiet --upgrade pip pyinstaller
 
 echo "Building…"
 cd "$HERE"
 wine "$WINPY" -m PyInstaller \
   --name RebrandX --onefile --windowed --noconfirm --clean \
   --icon 'share\rebrandx.ico' \
-  --add-data 'rebrandx\ui;rebrandx/ui' \
-  --hidden-import webview.platforms.edgechromium \
-  --collect-all webview \
-  'rebrandx\app_win.py'
+  --add-data 'share\rebrandx.ico;share' \
+  --add-data 'share\rebrandx.png;share' \
+  'rebrandx\app_tk.py'
 
 if [ -f dist/RebrandX.exe ]; then
   echo

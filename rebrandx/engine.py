@@ -14,11 +14,12 @@ import json
 import os
 import re
 import shutil
-import stat
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Callable, Iterable
+
+from rebrandx import win
 
 BACKUP_DIRNAME = ".rebrandx-backup"
 MANIFEST_NAME = "manifest.json"
@@ -317,37 +318,111 @@ class TextFile:
     newline: str
     trailing_newline: bool
     encoding: str = "utf-8"
+    bom: bytes = b""
+
+
+# Byte-order marks, longest first so UTF-32 is not mistaken for UTF-16.
+# Windows tooling emits these constantly -- PowerShell 5's `>` redirect
+# writes UTF-16LE, and Notepad still writes a UTF-8 BOM -- so a scanner
+# that only understands plain UTF-8 declares half a Windows project binary.
+#
+# The BOM is kept as bytes and the codec named without it, so the file is
+# rebuilt byte-for-byte. Decoding as plain "utf-16" and re-encoding the
+# same way would quietly rewrite a big-endian file as little-endian.
+_BOMS = (
+    (b"\xff\xfe\x00\x00", "utf-32-le"),
+    (b"\x00\x00\xfe\xff", "utf-32-be"),
+    (b"\xef\xbb\xbf", "utf-8"),
+    (b"\xff\xfe", "utf-16-le"),
+    (b"\xfe\xff", "utf-16-be"),
+)
+
+
+def _sniff(raw: bytes) -> tuple[bytes, str] | None:
+    """Pick the (BOM, codec) for `raw`, or None to leave the file alone.
+
+    Order matters. A BOM is authoritative. Without one, UTF-8 is tried
+    strictly -- it rejects almost every non-UTF-8 byte sequence, so a
+    success is real evidence. Only then does cp1252 get a turn, strictly
+    as well: it has undefined byte values, so it still refuses genuine
+    binary rather than turning it into mojibake the way latin-1 would.
+    """
+    for bom, enc in _BOMS:
+        if raw.startswith(bom):
+            return bom, enc
+    if b"\0" in raw[:8192]:
+        return None
+    for enc in ("utf-8", "cp1252"):
+        try:
+            raw.decode(enc)
+            return b"", enc
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+def _dominant_newline(text: str) -> str:
+    """The line ending this file mostly uses.
+
+    Picking CRLF because the file contains a single CRLF would rewrite
+    every other line's ending too, turning a two-word rebrand into a
+    whole-file diff. Mixed-ending files are common in repositories shared
+    between Windows and Linux, so the majority wins instead.
+    """
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    return "\r\n" if crlf > lf else "\n"
 
 
 def read_text(path: Path, limit: int) -> TextFile | None:
     """Return decoded text, or None when the file is binary/oversized."""
     try:
-        size = path.stat().st_size
+        size = os.stat(win.extended(path)).st_size
     except OSError:
         return None
     if size > limit:
         return None
     try:
-        raw = path.read_bytes()
+        with open(win.extended(path), "rb") as fh:
+            raw = fh.read()
     except OSError:
         return None
-    if b"\0" in raw[:8192]:
+    sniffed = _sniff(raw)
+    if sniffed is None:
         return None
-    for enc in ("utf-8", "utf-8-sig"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
+    bom, enc = sniffed
+    try:
+        text = raw[len(bom):].decode(enc)
+    except UnicodeDecodeError:
         return None
-    newline = "\r\n" if "\r\n" in text else "\n"
-    if newline == "\r\n":
-        text = text.replace("\r\n", "\n")
+    newline = _dominant_newline(text)
+    text = text.replace("\r\n", "\n")
     trailing = text.endswith("\n")
     if trailing:
         text = text[:-1]
-    return TextFile(text=text, newline=newline, trailing_newline=trailing, encoding=enc)
+    return TextFile(text=text, newline=newline, trailing_newline=trailing,
+                    encoding=enc, bom=bom)
+
+
+def write_text(path: Path, content: str, tf: TextFile | None) -> None:
+    """Write `content` back in the encoding and BOM it was read with.
+
+    Never relies on the locale default: that is cp1252 on a stock Windows
+    install, so an unqualified write mangles any non-Latin-1 character the
+    file already contained.
+    """
+    enc = (tf.encoding if tf else "utf-8")
+    bom = (tf.bom if tf else b"")
+    try:
+        raw = bom + content.encode(enc)
+    except UnicodeEncodeError:
+        # The rebrand introduced a character the original codec cannot
+        # hold -- a cp1252 file gaining a non-Latin-1 name, say. Promoting
+        # the whole file to UTF-8 keeps the text; the alternative is
+        # dropping characters silently.
+        raw = content.encode("utf-8")
+    with open(win.extended(path), "wb") as fh:
+        fh.write(raw)
 
 
 def join_lines(lines: list[str], tf: TextFile) -> str:
@@ -405,7 +480,7 @@ def diff_file(root: Path, rel: str, rules: Rules, opts: Options, *,
 
     full = root / rel
     try:
-        size = full.stat().st_size
+        size = os.stat(win.extended(full)).st_size
     except OSError:
         return d
     if size > opts.max_file_bytes:
@@ -513,7 +588,8 @@ def walk(root: Path, opts: Options) -> Iterable[tuple[str, bool, int, str | None
     def rec(d: Path, rel_base: str, depth: int):
         nonlocal count
         try:
-            items = sorted(os.scandir(d), key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()))
+            items = sorted(os.scandir(win.extended(d)),
+                           key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()))
         except OSError:
             return
         for e in items:
@@ -524,10 +600,12 @@ def walk(root: Path, opts: Options) -> Iterable[tuple[str, bool, int, str | None
                 continue
             try:
                 is_dir = e.is_dir(follow_symlinks=False)
-                is_link = e.is_symlink()
             except OSError:
                 continue
-            if is_link:
+            # Skips symlinks and, on Windows, directory junctions too --
+            # os.path.islink() is False for a junction, so without this a
+            # walk follows one out of the project or round in a circle.
+            if win.is_reparse_point(e):
                 continue
             flag = flag_for(rel, is_dir)
             hidden_by = flag if (flag in globs) else None
@@ -618,13 +696,16 @@ class ApplyError(Exception):
     pass
 
 
-UNSAFE_ROOTS = {"/", "/home", "/usr", "/etc", "/var", "/boot", "/bin", "/sbin", "/opt", "/root"}
+# Kept as a module attribute for callers that introspect it; the live
+# check is win.is_unsafe_root(), which also knows about drive roots,
+# C:\Windows, C:\Users and the profile's shell folders.
+UNSAFE_ROOTS = win.unsafe_roots()
 
 
 def _guard_root(root: Path) -> None:
-    p = str(root)
-    if p in UNSAFE_ROOTS or root == Path.home():
-        raise ApplyError("Refusing to rebrand %s -- pick a project folder." % p)
+    if win.is_unsafe_root(root):
+        raise ApplyError(
+            "Refusing to rebrand %s -- pick a project folder." % root)
 
 
 def _plan(root: Path, opts: Options, rules: Rules):
@@ -653,11 +734,10 @@ def apply_copy(root: Path, dest: Path, opts: Options, rules: Rules,
                progress: Callable[[int, int, str], None] | None = None) -> dict:
     if dest.exists() and any(dest.iterdir()):
         raise ApplyError("Destination is not empty: %s" % dest)
-    try:
-        dest.relative_to(root)
+    # Case-insensitively on Windows: C:\dev\App really is inside c:\dev,
+    # and copying a tree into itself never ends.
+    if win.is_inside(dest, root):
         raise ApplyError("Destination cannot live inside the source folder.")
-    except ValueError:
-        pass
 
     plan = _plan(root, opts, rules)
     total = len(plan)
@@ -671,21 +751,21 @@ def apply_copy(root: Path, dest: Path, opts: Options, rules: Rules,
             continue
         if excluded and not opts.copy_ignored:
             continue
-        target = dest / new_rel
+        target = dest / safe_rel(new_rel)
         if progress and idx % 50 == 0:
             progress(idx, total, rel)
         if is_dir:
-            target.mkdir(parents=True, exist_ok=True)
+            _mkdir(target)
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _mkdir(target.parent)
         src = root / rel
         content = None if excluded else rewrite_text(root, rel, rules, opts)
         if content is None:
-            shutil.copy2(src, target)
+            shutil.copy2(win.extended(src), win.extended(target))
         else:
             tf = read_text(src, opts.max_file_bytes)
-            target.write_text(content, encoding=(tf.encoding if tf else "utf-8"))
-            shutil.copystat(src, target)
+            write_text(target, content, tf)
+            shutil.copystat(win.extended(src), win.extended(target))
         files += 1
     return {"mode": "copy", "source": str(root), "dest": str(dest),
             "files": files, "dropped": dropped,
@@ -702,9 +782,13 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
                 "renames": [], "rewritten": [], "deleted": [], "time": time.time()}
 
     if backup:
-        if backup_dir.exists():
-            shutil.rmtree(backup_dir)
-        backup_dir.mkdir(parents=True)
+        if _exists(backup_dir):
+            win.rmtree(backup_dir)
+        _mkdir(backup_dir)
+        # A leading dot means nothing to Explorer, so set the attribute
+        # that does -- the backup should stay as out of the way on
+        # Windows as it is on Linux.
+        win.hide(backup_dir)
         manifest["backup"] = str(backup_dir)
 
     # 1. remove the old project's own files -- copied into the backup first,
@@ -712,21 +796,22 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
     dropped = 0
     for rel in _drop_roots(plan):
         src = root / rel
-        if not src.exists():
+        if not _exists(src):
             continue
         if backup:
             bpath = backup_dir / rel
-            bpath.parent.mkdir(parents=True, exist_ok=True)
+            _mkdir(bpath.parent)
             if src.is_dir():
-                shutil.copytree(src, bpath, dirs_exist_ok=True)
+                shutil.copytree(win.extended(src), win.extended(bpath),
+                                dirs_exist_ok=True)
             else:
-                shutil.copy2(src, bpath)
+                shutil.copy2(win.extended(src), win.extended(bpath))
         if src.is_dir():
             dropped += sum(1 for f in src.rglob("*") if f.is_file())
-            shutil.rmtree(src)
+            win.rmtree(src)
         else:
             dropped += 1
-            src.unlink()
+            win.unlink(src)
         manifest["deleted"].append(rel)
 
     # 2. content rewrites (paths are still the originals here)
@@ -742,10 +827,14 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
         src = root / rel
         if backup:
             bpath = backup_dir / rel
-            bpath.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, bpath)
+            _mkdir(bpath.parent)
+            shutil.copy2(win.extended(src), win.extended(bpath))
         tf = read_text(src, opts.max_file_bytes)
-        src.write_text(content, encoding=(tf.encoding if tf else "utf-8"))
+        # A read-only file still belongs to the rebrand -- clear the bit
+        # rather than aborting the run over an attribute.
+        if win.IS_WINDOWS and not os.access(win.extended(src), os.W_OK):
+            win.make_writable(src)
+        write_text(src, content, tf)
         manifest["rewritten"].append(rel)
         files += 1
 
@@ -772,7 +861,7 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
     for rel, new in renames:
         src_rel = current(rel)
         src = root / src_rel
-        if not src.exists():
+        if not _exists(src):
             continue
         parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
         dst_parent = current(parent) if parent else ""
@@ -783,32 +872,30 @@ def apply_in_place(root: Path, opts: Options, rules: Rules, *, backup: bool,
         manifest["renames"].append([rel, dst_rel])
 
     if backup:
-        (backup_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2))
+        write_manifest(backup_dir / MANIFEST_NAME, manifest)
     return {**manifest, "files": files, "dropped": dropped}
 
 
+def write_manifest(path: Path, manifest: dict) -> None:
+    """Save a manifest as UTF-8, whatever the machine's locale says.
+
+    The default on Windows is cp1252, which cannot hold most of the paths
+    people actually have -- and a manifest that fails to encode is a
+    rebrand that cannot be reverted.
+    """
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def read_manifest(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 # Names Windows will not accept. Checked on every platform so a project
-# rebranded on Linux still opens on Windows.
-WIN_BAD_CHARS = set('<>:"|?*')
-WIN_RESERVED = {"CON", "PRN", "AUX", "NUL"} | \
-    {"COM%d" % i for i in range(1, 10)} | {"LPT%d" % i for i in range(1, 10)}
-
-
-def windows_unsafe(name: str) -> str | None:
-    """Why Windows would reject this file name, or None if it is fine."""
-    if not name:
-        return None
-    bad = sorted(set(name) & WIN_BAD_CHARS)
-    if bad:
-        return "cannot contain %s" % " ".join(bad)
-    if any(ord(c) < 32 for c in name):
-        return "cannot contain control characters"
-    stem = name.split(".")[0].upper()
-    if stem in WIN_RESERVED:
-        return "%s is a reserved device name" % stem
-    if name[-1] in " .":
-        return "cannot end with a space or a dot"
-    return None
+# rebranded on Linux still opens on Windows. The rules live in win.py;
+# these names stay for callers (and tests) that already use them.
+WIN_BAD_CHARS = win.BAD_CHARS
+WIN_RESERVED = win.RESERVED
+windows_unsafe = win.unsafe_name
 
 
 def safe_rename(src: Path, dst: Path) -> Path:
@@ -817,7 +904,14 @@ def safe_rename(src: Path, dst: Path) -> Path:
     On NTFS and APFS `foo.js` and `Foo.js` are the same file, so a plain
     existence check would treat a case-only rebrand as a collision and
     invent `Foo-2.js`. Going via a temporary name does it properly.
+
+    On Windows the target name is also made legal first: a rebrand that
+    produces `CON.js` or `api:v2.py` cannot be written at all, and failing
+    here would abort the run half-applied.
     """
+    if win.IS_WINDOWS and win.unsafe_name(dst.name):
+        dst = dst.with_name(win.sanitize_name(dst.name))
+
     # Compare as strings: Path equality is case-INSENSITIVE on Windows, so
     # `src == dst` is true for a.js vs A.js and would skip the rename that
     # this whole function exists to perform.
@@ -826,16 +920,40 @@ def safe_rename(src: Path, dst: Path) -> Path:
     if str(src).lower() == str(dst).lower():
         tmp = src.with_name(src.name + ".rbx-tmp")
         i = 0
-        while tmp.exists():
+        while _exists(tmp):
             i += 1
             tmp = src.with_name("%s.rbx-tmp%d" % (src.name, i))
-        os.rename(src, tmp)
-        os.rename(tmp, dst)
+        win.rename(src, tmp)
+        win.rename(tmp, dst)
         return dst
-    if dst.exists():
+    if _exists(dst):
         dst = _unique(dst)
-    os.rename(src, dst)
+    win.rename(src, dst)
     return dst
+
+
+def _exists(p: Path) -> bool:
+    """Path.exists() that still works past 260 characters on Windows."""
+    return os.path.lexists(win.extended(p))
+
+
+def _mkdir(p: Path) -> None:
+    """mkdir -p, long-path aware."""
+    os.makedirs(win.extended(p), exist_ok=True)
+
+
+def safe_rel(rel: str) -> str:
+    """Make every segment of a relative path legal on this platform.
+
+    Only bites on Windows, and only when the rebrand itself produced an
+    impossible name -- replacing `api` with `aux`, say. Doing it here means
+    the copy completes with a near-miss name instead of dying part-written.
+    """
+    if not win.IS_WINDOWS:
+        return rel
+    return "/".join(
+        win.sanitize_name(s) if win.unsafe_name(s) else s
+        for s in rel.split("/"))
 
 
 def _unique(p: Path) -> Path:
@@ -843,7 +961,7 @@ def _unique(p: Path) -> Path:
     i = 2
     while True:
         cand = p.with_name("%s-%d%s" % (base, i, ext))
-        if not cand.exists():
+        if not _exists(cand):
             return cand
         i += 1
 
@@ -855,7 +973,7 @@ def revert(manifest: dict) -> str:
     if manifest.get("mode") == "copy":
         dest = Path(manifest["dest"])
         if manifest.get("created_dest") and dest.is_dir():
-            shutil.rmtree(dest)
+            win.rmtree(dest)
             return "Removed %s" % dest
         raise ApplyError("Copy destination is gone already.")
 
@@ -865,11 +983,11 @@ def revert(manifest: dict) -> str:
     # only the basename goes back -- the parent is restored on a later step.
     for rel, new in reversed(manifest.get("renames", [])):
         src = root / new
-        if not src.exists():
+        if not _exists(src):
             continue
         parent = new.rsplit("/", 1)[0] if "/" in new else ""
         dst = root / ((parent + "/" if parent else "") + rel.rsplit("/", 1)[-1])
-        if dst.exists() and str(src).lower() != str(dst).lower():
+        if _exists(dst) and str(src).lower() != str(dst).lower():
             continue
         safe_rename(src, dst)
     bdir = manifest.get("backup")
@@ -879,21 +997,24 @@ def revert(manifest: dict) -> str:
         for rel in manifest.get("deleted", []):
             b = Path(bdir) / rel
             target = root / rel
-            if b.is_dir() and not target.exists():
-                shutil.copytree(b, target)
+            if b.is_dir() and not _exists(target):
+                shutil.copytree(win.extended(b), win.extended(target))
                 n += sum(1 for f in target.rglob("*") if f.is_file())
-            elif b.is_file() and not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(b, target)
+            elif b.is_file() and not _exists(target):
+                _mkdir(target.parent)
+                shutil.copy2(win.extended(b), win.extended(target))
                 n += 1
         for rel in manifest.get("rewritten", []):
             b = Path(bdir) / rel
             if b.is_file():
                 target = root / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(b, target)
+                _mkdir(target.parent)
+                # The rebrand may have left the file read-only; the
+                # restore has to win over that, not stop at it.
+                win.make_writable(target)
+                shutil.copy2(win.extended(b), win.extended(target))
                 n += 1
-        shutil.rmtree(bdir, ignore_errors=True)
+        win.rmtree(bdir, ignore_errors=True)
     return "Restored %d file%s in %s" % (n, "" if n == 1 else "s", root)
 
 

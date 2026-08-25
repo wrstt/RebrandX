@@ -14,22 +14,41 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from rebrandx import engine                      # noqa: E402
+from rebrandx import engine, win                 # noqa: E402
 from rebrandx.engine import Options, ApplyError  # noqa: E402
 
 C = {"dim": "\033[2m", "red": "\033[31m", "grn": "\033[33m", "bold": "\033[1m",
      "acc": "\033[36m", "off": "\033[0m"}
 
+# The glyphs the output would like to use, and what to fall back to when the
+# stream cannot encode them. Redirecting to a file on Windows hands us a
+# cp1252 stream, and a tick or an arrow raises UnicodeEncodeError there --
+# so `rbx ... > build.log` used to die where the same command on screen was
+# perfectly happy.
+GLYPHS = {"tick": "✓", "arrow": "→", "dash": "—", "warn": "!"}
+ASCII_GLYPHS = {"tick": "OK", "arrow": "->", "dash": "-", "warn": "!"}
+
+
+def glyphs(stream=None):
+    stream = stream or sys.stdout
+    if all(win.encodable(g, stream) for g in GLYPHS.values()):
+        return GLYPHS
+    return ASCII_GLYPHS
+
 
 def paint(on: bool):
-    if on and os.name == "nt":
-        # Windows consoles need VT processing switched on before ANSI works.
-        try:
-            import ctypes
-            k = ctypes.windll.kernel32
-            k.SetConsoleMode(k.GetStdHandle(-11), 7)
-        except Exception:
-            return {k: "" for k in C}
+    """The colour table, or a table of empty strings when colour is off.
+
+    Honours NO_COLOR, and on Windows only returns real escapes once the
+    console has actually accepted VT processing -- an old conhost refuses,
+    and printing escapes to it produces line noise rather than colour.
+    """
+    if on and os.environ.get("NO_COLOR"):
+        on = False
+    if on and os.environ.get("TERM") == "dumb":
+        on = False
+    if on and not win.enable_ansi():
+        on = False
     return C if on else {k: "" for k in C}
 
 
@@ -93,7 +112,7 @@ def make_options(a) -> Options:
     )
 
 
-def preview(path: str, opts: Options, c, verbose: bool):
+def preview(path: str, opts: Options, c, verbose: bool, g=GLYPHS):
     res = engine.scan(path, opts)
     if res.error:
         print("%s%s%s" % (c["red"], res.error, c["off"]), file=sys.stderr)
@@ -116,12 +135,12 @@ def preview(path: str, opts: Options, c, verbose: bool):
                 bits.append("%d replacement%s" % (e["count"], "" if e["count"] == 1 else "s"))
             if e["removed"]:
                 bits.append("%d line%s removed" % (e["removed"], "" if e["removed"] == 1 else "s"))
-            rn = "  %s→ %s%s" % (c["grn"], e["newPath"], c["off"]) if e["renamed"] else ""
+            rn = "  %s%s %s%s" % (c["grn"], g["arrow"], e["newPath"], c["off"]) if e["renamed"] else ""
             print("  %s%s%s%s   %s%s%s" % (c["red"] if e["renamed"] else "", e["path"], c["off"],
                                            rn, c["dim"], ", ".join(bits), c["off"]))
     if res.truncated:
-        print("  %s! tree hit the %d-entry limit; not everything was scanned%s"
-              % (c["red"], opts.max_entries, c["off"]))
+        print("  %s%s tree hit the %d-entry limit; not everything was scanned%s"
+              % (c["red"], g["warn"], opts.max_entries, c["off"]))
     print("  %s%d%s files changed  %s%d%s replacements  %s%d%s renames  "
           "%s%d%s lines removed  %s%d%s files deleted" % (
               c["acc"], res.files_changed, c["off"], c["acc"], res.replacements, c["off"],
@@ -130,22 +149,51 @@ def preview(path: str, opts: Options, c, verbose: bool):
     return res
 
 
+def _open_window(args) -> int:
+    """Open the desktop window.
+
+    Windows gets the native tkinter app -- it needs nothing installed. On
+    Linux the GTK shell is preferred where its bindings are present, and
+    the same native window is the fallback when they are not.
+    """
+    if os.name != "nt":
+        try:
+            from rebrandx.app import main as gtk_main
+            return gtk_main(args)
+        except (ImportError, ValueError):
+            pass
+    from rebrandx.app_tk import main as tk_main
+    return tk_main(args)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     a = build_parser().parse_args(argv)
-    c = paint(sys.stdout.isatty() and not a.no_color)
+    # Ask for UTF-8 first: if the stream can be persuaded, the nice glyphs
+    # survive being redirected to a file on Windows.
+    # pythonw.exe and a .pyw shortcut give a process with no stdout at all,
+    # so this cannot assume there is a stream to ask.
+    tty = bool(sys.stdout is not None and sys.stdout.isatty())
+    if tty:
+        # A console renders UTF-8 properly. A redirect is left in the
+        # machine's own codepage instead, so `type build.log` shows text
+        # rather than mojibake -- glyphs() drops to ASCII to suit.
+        win.use_utf8()
+    c = paint(tty and not a.no_color)
+    g = glyphs()
 
     if a.revert:
-        import json
         rc = 0
         for raw in ([a.find] if a.find else []) + ([a.replace] if a.replace else []) + a.paths:
-            man_path = Path(os.path.expanduser(raw)) / engine.BACKUP_DIRNAME / "manifest.json"
+            man_path = (Path(os.path.expanduser(raw)) / engine.BACKUP_DIRNAME
+                        / engine.MANIFEST_NAME)
             if not man_path.is_file():
                 print("%sno backup found in %s%s" % (c["red"], raw, c["off"]), file=sys.stderr)
                 rc = 1
                 continue
             try:
-                print("%s✓%s %s" % (c["grn"], c["off"], engine.revert(json.loads(man_path.read_text()))))
+                print("%s%s%s %s" % (c["grn"], g["tick"], c["off"],
+                                     engine.revert(engine.read_manifest(man_path))))
             except (ApplyError, OSError, ValueError) as exc:
                 print("%s%s%s" % (c["red"], exc, c["off"]), file=sys.stderr)
                 rc = 1
@@ -153,11 +201,7 @@ def main(argv=None) -> int:
 
     if a.gui or (not a.find and not a.replace and not a.paths):
         args = [sys.argv[0]] + ([a.paths[0]] if a.paths else [])
-        if os.name == "nt":
-            from rebrandx.app_win import main as gui_main
-        else:
-            from rebrandx.app import main as gui_main
-        return gui_main(args)
+        return _open_window(args)
 
     if not a.find or not a.replace or not a.paths:
         build_parser().print_usage(sys.stderr)
@@ -172,7 +216,7 @@ def main(argv=None) -> int:
     opts = make_options(a)
     results = []
     for p in a.paths:
-        res = preview(p, opts, c, a.verbose or a.dry_run)
+        res = preview(p, opts, c, a.verbose or a.dry_run, g)
         if res is None:
             return 1
         results.append((p, res))
@@ -180,7 +224,7 @@ def main(argv=None) -> int:
 
     total = sum(r.files_changed for _, r in results)
     if a.dry_run:
-        print("%sdry run — nothing written%s" % (c["dim"], c["off"]))
+        print("%sdry run %s nothing written%s" % (c["dim"], g["dash"], c["off"]))
         return 0
     if total == 0:
         print("%snothing to do%s" % (c["dim"], c["off"]))
@@ -190,8 +234,8 @@ def main(argv=None) -> int:
         where = ("copied into %s" % a.into) if a.into else "rewritten in place"
         extra = "" if (a.into or a.no_backup) else " (a .rebrandx-backup copy is kept)"
         try:
-            ans = input("Rebrand %d file%s — they will be %s%s. Continue? [y/N] "
-                        % (total, "" if total == 1 else "s", where, extra))
+            ans = input("Rebrand %d file%s %s they will be %s%s. Continue? [y/N] "
+                        % (total, "" if total == 1 else "s", g["dash"], where, extra))
         except (EOFError, KeyboardInterrupt):
             print(); return 130
         if ans.strip().lower() not in ("y", "yes"):
@@ -206,10 +250,12 @@ def main(argv=None) -> int:
             print("%s%s%s" % (c["red"], exc, c["off"]), file=sys.stderr)
             return 1
         if a.into:
-            print("%s✓%s %s → %s (%d files)" % (c["grn"], c["off"], p, man["dest"], man["files"]))
+            print("%s%s%s %s %s %s (%d files)" % (c["grn"], g["tick"], c["off"],
+                                                  p, g["arrow"], man["dest"], man["files"]))
         else:
-            print("%s✓%s %s — %d rewritten, %d renamed, %d deleted%s" % (
-                c["grn"], c["off"], p, man["files"], len(man["renames"]),
+            print("%s%s%s %s %s %d rewritten, %d renamed, %d deleted%s" % (
+                c["grn"], g["tick"], c["off"], p, g["dash"],
+                man["files"], len(man["renames"]),
                 man.get("dropped", 0),
                 "" if a.no_backup else ", backup in .rebrandx-backup/"))
     return 0

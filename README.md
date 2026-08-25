@@ -191,7 +191,7 @@ Individual changed lines can be excluded before applying the rebrand.
 cd ~/.local/share/rebrandx
 ./packaging/build-deb.sh
 
-sudo apt install ~/.local/share/rebrandx/dist/rebrandx_1.0.0_all.deb
+sudo apt install ~/.local/share/rebrandx/dist/rebrandx_1.1.0_all.deb
 ```
 
 This installs both:
@@ -233,41 +233,47 @@ RebrandX uses the system GTK stack and does not require a Python package environ
 
 ---
 
-## Windows
+### Windows
 
-Windows 10 and 11 include WebView2.
+Needs [Python 3.8+](https://www.python.org/downloads/) — and nothing else. The window is a native desktop app built on tkinter, which ships with Python. No runtime, no browser engine, no packages to install, and it works entirely offline.
 
-Install the UI dependency:
-
-```powershell
-pip install pywebview
-```
-
-Run:
-
-```powershell
-python rebrandx\app_win.py
-```
-
-or:
-
-```text
-bin\rebrandx.bat
-```
-
-### Build a standalone EXE
+#### Standalone .exe (no install)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\build-windows.ps1
 ```
 
-Output:
+Produces two self-contained files that need no Python and no install step:
 
 ```text
-RebrandX.exe
+dist\RebrandX.exe          the app — double-click it
+dist\rbx.exe               the command line
+dist\RebrandX-windows.zip  both, ready to hand to someone
 ```
 
-See [`packaging/README-windows.md`](packaging/README-windows.md) for Windows-specific behavior including NTFS case-only renames, long paths and invalid Windows filenames.
+Put them anywhere. Every release also ships them as build artifacts.
+
+#### Run from source
+
+```powershell
+python rebrandx\app_tk.py
+```
+
+Nothing to install first. Or double-click `bin\rebrandx.bat`; for the command line, `bin\rbx.bat`.
+
+#### Optional: register it with Windows
+
+If you would rather have it in the Start menu than run a loose `.exe`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+That adds a Start menu entry, a desktop shortcut, `rbx` and `rebrandx` on your PATH, and a **Rebrand with RebrandX** item on the right-click menu of any folder. Everything is per-user — no admin rights, nothing outside `HKCU` and `%LOCALAPPDATA%`.
+
+Preview it with `-DryRun`, tune it with `-NoDesktopIcon` / `-NoContextMenu` / `-NoPath`, and undo it with `uninstall.ps1`.
+
+See [`packaging/README-windows.md`](packaging/README-windows.md) for Windows-specific behaviour — NTFS case-only renames, long paths, invalid filenames, encodings and read-only files.
 
 ---
 
@@ -381,13 +387,13 @@ and similar high-risk directories.
 rebrandx/
 ├── engine.py       Rebrand engine
 ├── core.py         Shared application logic
+├── app_tk.py       native desktop window (Windows + fallback)
+├── widgets.py      the drawn controls it is built from
+├── theme.py        palette and ttk styling
+├── win.py          Windows filesystem + console primitives
 ├── app.py          Linux GTK shell
-├── app_win.py      Windows WebView2 shell
 ├── cli.py          rbx CLI
-└── ui/
-    ├── index.html
-    ├── app.css
-    └── app.js
+└── ui/             assets for the GTK shell
 
 bin/                CLI / launcher scripts
 packaging/          Linux + Windows packaging
@@ -408,8 +414,9 @@ The architecture intentionally keeps the rename engine separate from the interfa
                     │
         ┌───────────┼───────────┐
         ▼           ▼           ▼
-      Linux       Windows       CLI
-       GTK        WebView2      rbx
+     Windows      Linux         CLI
+      tkinter      GTK          rbx
+     (stdlib)
 ```
 
 `engine.py` uses only the Python standard library and has no dependency on a GUI toolkit.
@@ -435,10 +442,22 @@ The suite currently covers **35 checks**, including:
 * project-file cleanup
 * Windows filename handling
 
-A separate GUI probe tests the actual GTK interface.
+Windows behaviour has its own suite:
 
 ```bash
-python3 tests/gui_probe.py
+python tests/test_windows.py
+```
+
+89 checks covering illegal filenames, drive-root guards, encodings and
+BOMs, line endings, read-only files, junctions, long paths, case-only
+renames and the desktop window itself.
+
+GUI probes drive the real interfaces and report what they painted:
+
+```bash
+python tests/gui_probe_tk.py        # the native window
+python tests/gui_probe_tk.py --shot window.png
+python3 tests/gui_probe.py          # the Linux GTK shell
 ```
 
 ---
@@ -456,13 +475,11 @@ python3 tests/gui_probe.py
 
 ## Built With
 
-* Python
-* GTK 3
-* WebKitGTK
-* WebView2
-* pywebview
+* Python — standard library only
+* tkinter for the native desktop window
+* GTK 3 / WebKitGTK for the Linux shell
 
-The Linux and Windows interfaces share the same underlying RebrandX engine.
+The Windows app has **no third-party dependencies at all**. Every interface shares the same underlying RebrandX engine.
 
 ---
 
